@@ -1,0 +1,16 @@
+.idea/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.spec
+*.log
+dist/
+build/
+tmp/
+.git/
+.gitignore
+Dockerfile
+Makefile
+README.md

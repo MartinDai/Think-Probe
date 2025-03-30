@@ -1,0 +1,23 @@
+[project]
+name = "Think-Probe"
+version = "0.1.0"
+description = "A thinking agent application"
+authors = [
+    {name = "MartinDai", email = "xiaomingys@gmail.com"},
+]
+readme = "README.md"
+requires-python = "==3.12.*"
+dependencies = [
+    "openai-agents==0.0.7",
+    "fastapi==0.115.12",
+    "pydantic==2.10.6",
+    "PyYAML==6.0.2",
+    "uvicorn==0.34.0",
+    "python-dotenv==1.1.0",
+    "colorama==0.4.6",
+    "jinja2==3.1.6"
+]
+license = {text = "MIT"}
+
+[tool.pdm]
+distribution = false

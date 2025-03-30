@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Think Probe</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- 引入marked库 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+<div class="container">
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <button onclick="newConversation()">+ 新建会话</button>
+        </div>
+        <div id="conversation-list"></div>
+    </div>
+    <div class="main">
+        <div class="chat-header">
+            <h1 id="conversation-title">新会话</h1>
+        </div>
+        <div id="chat-container">
+            <div id="messages"></div>
+            <div class="input-area">
+                <textarea id="message-input" placeholder="输入你的消息..."></textarea>
+                <button onclick="sendMessage()">发送</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentConversationId = null;
+    let conversations = JSON.parse(localStorage.getItem('conversations')) || {};
+
+    function newConversation() {
+        currentConversationId = 'conv_' + Date.now();
+        document.getElementById('conversation-title').textContent = '新会话';
+        document.getElementById('messages').innerHTML = '';
+        updateConversationList();
+    }
+
+    function loadConversation(convId) {
+        currentConversationId = convId;
+        const firstMessage = conversations[convId]?.messages[0]?.content.substring(0, 30) + '...' || '新会话';
+        document.getElementById('conversation-title').textContent = firstMessage;
+        const messages = conversations[convId]?.messages || [];
+        const messagesDiv = document.getElementById('messages');
+        messagesDiv.innerHTML = '';
+        messages.forEach(msg => addMessage(msg.role === 'user' ? 'user' : 'model', msg.content));
+        updateConversationList();
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('message-input');
+        const message = input.value.trim();
+        if (!message) return;
+
+        if (!currentConversationId) {
+            currentConversationId = 'conv_' + Date.now();
+        }
+
+        addMessage('user', message);
+        saveMessage('user', message);
+        input.value = '';
+
+        const responseContainer = addMessage('model', '');
+
+        const response = await fetch('/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [{ role: "user", content: message }],
+                conversation_id: currentConversationId
+            })
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let accumulatedText = "";
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const jsonData = JSON.parse(line.substring(6));
+                        if (jsonData.choices && jsonData.choices[0].delta && jsonData.choices[0].delta.content) {
+                            accumulatedText += jsonData.choices[0].delta.content;
+                            responseContainer.innerHTML = marked.parse(accumulatedText); // 渲染Markdown
+                        }
+                    } catch (e) {
+                        console.error("JSON parse error:", e);
+                    }
+                }
+            }
+        }
+        saveMessage('model', accumulatedText);
+        document.getElementById('conversation-title').textContent =
+            conversations[currentConversationId].messages[0].content.substring(0, 30) + '...';
+        updateConversationList();
+    }
+
+    function addMessage(sender, text) {
+        const messagesDiv = document.getElementById('messages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${sender}`;
+        if (sender === 'model') {
+            messageDiv.innerHTML = marked.parse(text); // 模型消息渲染Markdown
+        } else {
+            messageDiv.textContent = text; // 用户消息保持纯文本
+        }
+        messagesDiv.appendChild(messageDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        return messageDiv;
+    }
+
+    function saveMessage(role, content) {
+        if (!conversations[currentConversationId]) {
+            conversations[currentConversationId] = { messages: [], timestamp: Date.now() };
+        }
+        conversations[currentConversationId].messages.push({ role, content });
+        conversations[currentConversationId].timestamp = Date.now();
+        localStorage.setItem('conversations', JSON.stringify(conversations));
+    }
+
+    function deleteConversation(convId) {
+        if (confirm('确定要删除这个会话吗？此操作不可撤销。')) {
+            delete conversations[convId];
+            localStorage.setItem('conversations', JSON.stringify(conversations));
+            if (currentConversationId === convId) {
+                currentConversationId = null;
+                document.getElementById('conversation-title').textContent = 'AI Chat';
+                document.getElementById('messages').innerHTML = '';
+            }
+            updateConversationList();
+        }
+    }
+
+    function updateConversationList() {
+        const listDiv = document.getElementById('conversation-list');
+        listDiv.innerHTML = '';
+        Object.entries(conversations)
+            .sort((a, b) => b[1].timestamp - a[1].timestamp)
+            .forEach(([convId, data]) => {
+                if (data.messages.length > 0) {
+                    const convItem = document.createElement('div');
+                    convItem.className = `conversation-item ${convId === currentConversationId ? 'active' : ''}`;
+
+                    const textSpan = document.createElement('span');
+                    textSpan.className = 'conversation-text';
+                    textSpan.textContent = data.messages[0]?.content.substring(0, 30) + '...' || '新会话';
+                    convItem.appendChild(textSpan);
+
+                    const deleteBtn = document.createElement('span');
+                    deleteBtn.className = 'delete-btn';
+                    deleteBtn.textContent = '×';
+                    deleteBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        deleteConversation(convId);
+                    };
+                    convItem.appendChild(deleteBtn);
+
+                    convItem.onclick = (e) => {
+                        if (e.target !== deleteBtn) loadConversation(convId);
+                    };
+                    convItem.title = convId;
+                    listDiv.appendChild(convItem);
+                }
+            });
+    }
+
+    document.getElementById('message-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    updateConversationList();
+    if (Object.keys(conversations).length > 0) {
+        loadConversation(Object.keys(conversations).sort((a, b) =>
+            conversations[b].timestamp - conversations[a].timestamp)[0]);
+    }
+</script>
+</body>
+</html>
