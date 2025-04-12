@@ -37,6 +37,8 @@ class ConfigLoader:
 
 config = ConfigLoader()
 
+on_debug = True == config.get("debug")
+
 # 打印配置内容
 logger.info("Config contents:")
 for key, value in config.config.items():

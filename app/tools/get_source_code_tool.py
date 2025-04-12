@@ -50,6 +50,5 @@ def get_source_code_tool(class_full_name: str) -> str:
     
     }
     """
-    my_dict = {'tool': mock_code}
 
-    return str(my_dict)
+    return mock_code

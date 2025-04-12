@@ -17,6 +17,7 @@
     <div class="main">
         <div class="chat-header">
             <h1 id="conversation-title">新会话</h1>
+            <span id="conversation-id"></span>
         </div>
         <div id="chat-container">
             <div id="messages"></div>
@@ -35,6 +36,7 @@
     function newConversation() {
         currentConversationId = 'conv_' + Date.now();
         document.getElementById('conversation-title').textContent = '新会话';
+        document.getElementById('conversation-id').textContent = currentConversationId;
         document.getElementById('messages').innerHTML = '';
         updateConversationList();
     }
@@ -43,10 +45,14 @@
         currentConversationId = convId;
         const firstMessage = conversations[convId]?.messages[0]?.content.substring(0, 30) + '...' || '新会话';
         document.getElementById('conversation-title').textContent = firstMessage;
+        document.getElementById('conversation-id').textContent = convId;
         const messages = conversations[convId]?.messages || [];
         const messagesDiv = document.getElementById('messages');
         messagesDiv.innerHTML = '';
-        messages.forEach(msg => addMessage(msg.role === 'user' ? 'user' : 'model', msg.content));
+        messages.forEach(msg => {
+            const sender = msg.role === 'user' ? 'user' : msg.role === 'assistant' ? 'assistant' : 'tool';
+            addMessage(sender, msg.content);
+        });
         updateConversationList();
     }
 
@@ -63,7 +69,9 @@
         saveMessage('user', message);
         input.value = '';
 
-        const responseContainer = addMessage('model', '');
+        let responseContainer = null;
+        let accumulatedText = "";
+        let forceNewMessageDiv = true;
 
         const response = await fetch('/v1/chat/completions', {
             method: 'POST',
@@ -76,7 +84,6 @@
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
-        let accumulatedText = "";
 
         while (true) {
             const { value, done } = await reader.read();
@@ -89,9 +96,21 @@
                 if (line.startsWith('data: ')) {
                     try {
                         const jsonData = JSON.parse(line.substring(6));
-                        if (jsonData.choices && jsonData.choices[0].delta && jsonData.choices[0].delta.content) {
+
+                        if (jsonData.object === 'chat.completion.block' && jsonData.choices && jsonData.choices[0].delta && jsonData.choices[0].delta.content) {
+                            responseContainer = addMessage(jsonData.choices[0].delta.role, ''); // 使用 assistant 角色
+                            accumulatedText = jsonData.choices[0].delta.content;
+                            responseContainer.innerHTML = marked.parse(accumulatedText);
+                            saveMessage(jsonData.choices[0].delta.role, accumulatedText);
+                            forceNewMessageDiv = true;
+                        } else if (jsonData.choices && jsonData.choices[0].delta && jsonData.choices[0].delta.content) {
+                            if (forceNewMessageDiv || !responseContainer) {
+                                responseContainer = addMessage('assistant', '');
+                                accumulatedText = "";
+                            }
                             accumulatedText += jsonData.choices[0].delta.content;
-                            responseContainer.innerHTML = marked.parse(accumulatedText); // 渲染Markdown
+                            responseContainer.innerHTML = marked.parse(accumulatedText);
+                            forceNewMessageDiv = false;
                         }
                     } catch (e) {
                         console.error("JSON parse error:", e);
@@ -99,7 +118,11 @@
                 }
             }
         }
-        saveMessage('model', accumulatedText);
+
+        if (accumulatedText && !forceNewMessageDiv) {
+            saveMessage('assistant', accumulatedText);
+        }
+
         document.getElementById('conversation-title').textContent =
             conversations[currentConversationId].messages[0].content.substring(0, 30) + '...';
         updateConversationList();
@@ -108,11 +131,22 @@
     function addMessage(sender, text) {
         const messagesDiv = document.getElementById('messages');
         const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${sender}`;
-        if (sender === 'model') {
-            messageDiv.innerHTML = marked.parse(text); // 模型消息渲染Markdown
+        messageDiv.className = `message ${sender}`; // sender 可以是 user、assistant 或 tool
+        if (sender === 'assistant' || sender === 'tool') {
+            // assistant 和 tool 消息渲染 Markdown
+            let renderedContent = marked.parse(text);
+            // 后处理：为 <pre> 和 <table> 添加宽度限制
+            renderedContent = renderedContent.replace(
+                /<pre>/g,
+                '<pre style="max-width: 100%; overflow-x: auto;">'
+            );
+            renderedContent = renderedContent.replace(
+                /<table>/g,
+                '<table style="max-width: 100%; overflow-x: auto; display: block;">'
+            );
+            messageDiv.innerHTML = renderedContent;
         } else {
-            messageDiv.textContent = text; // 用户消息保持纯文本
+            messageDiv.textContent = text; // user 消息保持纯文本
         }
         messagesDiv.appendChild(messageDiv);
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
@@ -123,6 +157,7 @@
         if (!conversations[currentConversationId]) {
             conversations[currentConversationId] = { messages: [], timestamp: Date.now() };
         }
+        // role 可以是 user、assistant 或 tool
         conversations[currentConversationId].messages.push({ role, content });
         conversations[currentConversationId].timestamp = Date.now();
         localStorage.setItem('conversations', JSON.stringify(conversations));
