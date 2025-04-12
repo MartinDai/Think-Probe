@@ -3,6 +3,7 @@ from agents.extensions import handoff_filters
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 
 from app.agent.java_diagnosis_agent import JavaDiagnosisAgent
+from app.agent.shell_agent import ShellAgent
 
 
 def triage_handoff_message_filter(handoff_message_data: HandoffInputData) -> HandoffInputData:
@@ -26,7 +27,9 @@ TriageAgent = Agent(
     ),
     handoffs=[
         handoff(agent=JavaDiagnosisAgent),
+        handoff(agent=ShellAgent),
     ],
 )
 
 JavaDiagnosisAgent.handoffs = [handoff(agent=TriageAgent, input_filter=triage_handoff_message_filter)]
+ShellAgent.handoffs = [handoff(agent=TriageAgent)]

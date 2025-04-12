@@ -2,11 +2,13 @@ import json
 from io import TextIOWrapper
 
 from app.agent.java_diagnosis_agent import JavaDiagnosisAgent
+from app.agent.shell_agent import ShellAgent
 from app.agent.triage_agent import TriageAgent
 from app.config.config import RUNTIME_DIR
 from app.context.conversation_context import ConversationContext
 
 CONVERSATIONS_DIR = "conversations"
+
 
 def save_conversation(context: ConversationContext):
     """
@@ -40,6 +42,8 @@ def find_conversation(conversation_id: str) -> ConversationContext | None:
         current_agent = data['current_agent']
         if current_agent == "Java Diagnosis Agent":
             context.current_agent = JavaDiagnosisAgent
+        elif current_agent == "Shell Agent":
+            context.current_agent = ShellAgent
         else:
             context.current_agent = TriageAgent
         return context
