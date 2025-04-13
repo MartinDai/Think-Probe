@@ -2,4 +2,4 @@ openai_api_key: "sk-xxx"
 base_url: "https://openrouter.ai/api/v1"
 api_key: "sk-xxx"
 model_name: "qwen/qwen-2.5-72b-instruct"
-debug: true
+debug: false

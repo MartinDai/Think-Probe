@@ -15,7 +15,7 @@ pip install pdm
 pdm install
 ```
 
-运行run.py
+运行run.py启动服务，访问http://127.0.0.1:8080页面即可开始聊天
 
 ## 根据当前架构打包镜像
 
@@ -28,3 +28,4 @@ make
 ```shell
 make linux-amd64
 ```
+
