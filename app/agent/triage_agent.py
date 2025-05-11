@@ -1,21 +1,8 @@
-from agents import Agent, handoff, HandoffInputData
-from agents.extensions import handoff_filters
+from agents import Agent, handoff
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 
 from app.agent.java_diagnosis_agent import JavaDiagnosisAgent
 from app.agent.shell_agent import ShellAgent
-
-
-def triage_handoff_message_filter(handoff_message_data: HandoffInputData) -> HandoffInputData:
-    # 删除所有的工具调用
-    handoff_message_data = handoff_filters.remove_all_tools(handoff_message_data)
-
-    return HandoffInputData(
-        input_history=handoff_message_data.input_history,
-        pre_handoff_items=tuple(handoff_message_data.pre_handoff_items),
-        new_items=tuple(handoff_message_data.new_items),
-    )
-
 
 TriageAgent = Agent(
     name="Triage Agent",
@@ -31,5 +18,5 @@ TriageAgent = Agent(
     ],
 )
 
-JavaDiagnosisAgent.handoffs = [handoff(agent=TriageAgent, input_filter=triage_handoff_message_filter)]
+JavaDiagnosisAgent.handoffs = [handoff(agent=TriageAgent)]
 ShellAgent.handoffs = [handoff(agent=TriageAgent)]

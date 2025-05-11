@@ -1,5 +1,3 @@
-import asyncio
-
 from agents.mcp import MCPServerSse
 
 linux_mcp_server = MCPServerSse(
@@ -8,5 +6,3 @@ linux_mcp_server = MCPServerSse(
         "url": "http://localhost:3001/sse",
     },
 )
-
-asyncio.run(linux_mcp_server.connect())

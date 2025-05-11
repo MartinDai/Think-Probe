@@ -1,14 +1,15 @@
 import json
 from io import TextIOWrapper
+from pathlib import Path
 
 from app.agent.java_diagnosis_agent import JavaDiagnosisAgent
 from app.agent.shell_agent import ShellAgent
 from app.agent.triage_agent import TriageAgent
-from app.config.config import RUNTIME_DIR
 from app.context.conversation_context import ConversationContext
 
 CONVERSATIONS_DIR = "conversations"
 
+RUNTIME_DIR = Path.cwd()
 
 def save_conversation(context: ConversationContext):
     """
@@ -31,7 +32,7 @@ def save_conversation(context: ConversationContext):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 
-def find_conversation(conversation_id: str) -> ConversationContext | None:
+def get_conversation_context(conversation_id: str) -> ConversationContext | None:
     filename = RUNTIME_DIR / CONVERSATIONS_DIR / f"{conversation_id}.json"
     if not filename.exists():
         return None

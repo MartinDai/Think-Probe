@@ -39,11 +39,11 @@ build: $(TARGET)
 
 linux-amd64:
 	@echo "Building for linux/amd64..."
-	docker buildx build --platform linux/amd64 -t think-probe-amd64:$(VERSION) -o type=docker .
+	docker buildx build --platform linux/amd64 -t think-probe:$(VERSION) -o type=docker .
 
 linux-arm64:
 	@echo "Building for linux/arm64..."
-	docker buildx build --platform linux/arm64 -t think-probe-arm64:$(VERSION) -o type=docker .
+	docker buildx build --platform linux/arm64 -t think-probe:$(VERSION) -o type=docker .
 
 clean:
 	docker buildx prune -f

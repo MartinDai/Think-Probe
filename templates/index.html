@@ -1,10 +1,9 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh">
 <head>
     <title>Think Probe</title>
     <link rel="stylesheet" href="/static/style.css">
-    <!-- 引入marked库 -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/marked/15.0.7/marked.min.js"></script>
 </head>
 <body>
 <div class="container">
@@ -16,7 +15,7 @@
     </div>
     <div class="main">
         <div class="chat-header">
-            <h1 id="conversation-title">新会话</h1>
+            <h1 id="conversation-title" onclick="editConversationTitle()">新会话</h1>
             <span id="conversation-id"></span>
         </div>
         <div id="chat-container">
@@ -35,18 +34,39 @@
 
     function newConversation() {
         currentConversationId = 'conv_' + Date.now();
+        conversations[currentConversationId] = {
+            messages: [],
+            timestamp: Date.now(),
+            title: '新会话'
+        };
         document.getElementById('conversation-title').textContent = '新会话';
         document.getElementById('conversation-id').textContent = currentConversationId;
         document.getElementById('messages').innerHTML = '';
         updateConversationList();
+        localStorage.setItem('conversations', JSON.stringify(conversations));
+    }
+
+    function editConversationTitle() {
+        if (!currentConversationId) return;
+        const currentTitle = conversations[currentConversationId]?.title || '新会话';
+        const newTitle = prompt('请输入新的会话标题:', currentTitle);
+        if (newTitle && newTitle.trim()) {
+            conversations[currentConversationId].title = newTitle.trim();
+            document.getElementById('conversation-title').textContent = newTitle.trim();
+            localStorage.setItem('conversations', JSON.stringify(conversations));
+            updateConversationList();
+        }
     }
 
     function loadConversation(convId) {
         currentConversationId = convId;
-        const firstMessage = conversations[convId]?.messages[0]?.content.substring(0, 30) + '...' || '新会话';
-        document.getElementById('conversation-title').textContent = firstMessage;
+        // 使用会话的 title，如果没有则使用第一条消息的截断内容或默认值
+        const conversation = conversations[convId];
+        const title = conversation?.title ||
+            (conversation?.messages[0]?.content.substring(0, 30) + '...' || '新会话');
+        document.getElementById('conversation-title').textContent = title;
         document.getElementById('conversation-id').textContent = convId;
-        const messages = conversations[convId]?.messages || [];
+        const messages = conversation?.messages || [];
         const messagesDiv = document.getElementById('messages');
         messagesDiv.innerHTML = '';
         messages.forEach(msg => {
@@ -62,7 +82,7 @@
         if (!message) return;
 
         if (!currentConversationId) {
-            currentConversationId = 'conv_' + Date.now();
+            newConversation();
         }
 
         addMessage('user', message);
@@ -73,11 +93,15 @@
         let accumulatedText = "";
         let forceNewMessageDiv = true;
 
+        document.cookie = "SESSION=M2ExNmFkMzgtN2FkOC00YzNkLWExNWYtMjQwMmJhNGE3ZjI2; path=/";
+        document.cookie = "sys_token=678c5e33738145d9b29296f6e27919f6; path=/";
+        document.cookie = "sys_env_id=822313712173449216; path=/";
+        document.cookie = "sys_env_code=Init; path=/";
         const response = await fetch('/v1/chat/completions', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
-                messages: [{ role: "user", content: message }],
+                messages: [{role: "user", content: message}],
                 conversation_id: currentConversationId
             })
         });
@@ -86,29 +110,30 @@
         const decoder = new TextDecoder('utf-8');
 
         while (true) {
-            const { value, done } = await reader.read();
+            const {value, done} = await reader.read();
             if (done) break;
 
-            const chunk = decoder.decode(value, { stream: true });
+            const chunk = decoder.decode(value, {stream: true});
             const lines = chunk.split('\n');
 
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
                     try {
                         const jsonData = JSON.parse(line.substring(6));
-
-                        if (jsonData.object === 'chat.completion.block' && jsonData.choices && jsonData.choices[0].delta && jsonData.choices[0].delta.content) {
-                            responseContainer = addMessage(jsonData.choices[0].delta.role, ''); // 使用 assistant 角色
-                            accumulatedText = jsonData.choices[0].delta.content;
-                            responseContainer.innerHTML = marked.parse(accumulatedText);
-                            saveMessage(jsonData.choices[0].delta.role, accumulatedText);
+                        if (jsonData.object === 'chat.completion.step.done') {
+                            if (accumulatedText) {
+                                saveMessage('assistant', accumulatedText);
+                            }
                             forceNewMessageDiv = true;
+                            accumulatedText = "";
+                            responseContainer = null;
                         } else if (jsonData.choices && jsonData.choices[0].delta && jsonData.choices[0].delta.content) {
+                            const content = jsonData.choices[0].delta.content;
                             if (forceNewMessageDiv || !responseContainer) {
                                 responseContainer = addMessage('assistant', '');
                                 accumulatedText = "";
                             }
-                            accumulatedText += jsonData.choices[0].delta.content;
+                            accumulatedText += content;
                             responseContainer.innerHTML = marked.parse(accumulatedText);
                             forceNewMessageDiv = false;
                         }
@@ -123,19 +148,21 @@
             saveMessage('assistant', accumulatedText);
         }
 
-        document.getElementById('conversation-title').textContent =
-            conversations[currentConversationId].messages[0].content.substring(0, 30) + '...';
+        // 只有在标题为空或为默认值时，才用第一条消息更新标题
+        if (!conversations[currentConversationId].title || conversations[currentConversationId].title === '新会话') {
+            conversations[currentConversationId].title = message.substring(0, 30) + '...';
+            document.getElementById('conversation-title').textContent = conversations[currentConversationId].title;
+        }
         updateConversationList();
+        localStorage.setItem('conversations', JSON.stringify(conversations));
     }
 
     function addMessage(sender, text) {
         const messagesDiv = document.getElementById('messages');
         const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${sender}`; // sender 可以是 user、assistant 或 tool
+        messageDiv.className = `message ${sender}`;
         if (sender === 'assistant' || sender === 'tool') {
-            // assistant 和 tool 消息渲染 Markdown
             let renderedContent = marked.parse(text);
-            // 后处理：为 <pre> 和 <table> 添加宽度限制
             renderedContent = renderedContent.replace(
                 /<pre>/g,
                 '<pre style="max-width: 100%; overflow-x: auto;">'
@@ -146,7 +173,7 @@
             );
             messageDiv.innerHTML = renderedContent;
         } else {
-            messageDiv.textContent = text; // user 消息保持纯文本
+            messageDiv.textContent = text;
         }
         messagesDiv.appendChild(messageDiv);
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
@@ -155,10 +182,9 @@
 
     function saveMessage(role, content) {
         if (!conversations[currentConversationId]) {
-            conversations[currentConversationId] = { messages: [], timestamp: Date.now() };
+            conversations[currentConversationId] = {messages: [], timestamp: Date.now(), title: '新会话'};
         }
-        // role 可以是 user、assistant 或 tool
-        conversations[currentConversationId].messages.push({ role, content });
+        conversations[currentConversationId].messages.push({role, content});
         conversations[currentConversationId].timestamp = Date.now();
         localStorage.setItem('conversations', JSON.stringify(conversations));
     }
@@ -170,6 +196,7 @@
             if (currentConversationId === convId) {
                 currentConversationId = null;
                 document.getElementById('conversation-title').textContent = 'AI Chat';
+                document.getElementById('conversation-id').textContent = '';
                 document.getElementById('messages').innerHTML = '';
             }
             updateConversationList();
@@ -188,7 +215,7 @@
 
                     const textSpan = document.createElement('span');
                     textSpan.className = 'conversation-text';
-                    textSpan.textContent = data.messages[0]?.content.substring(0, 30) + '...' || '新会话';
+                    textSpan.textContent = data.title || (data.messages[0]?.content.substring(0, 30) + '...' || '新会话');
                     convItem.appendChild(textSpan);
 
                     const deleteBtn = document.createElement('span');

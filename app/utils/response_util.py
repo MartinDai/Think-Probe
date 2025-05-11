@@ -22,18 +22,17 @@ def create_chunk(conversation_id=None, content=None, role=None, model=None, fini
     return chunk
 
 
-def create_block(conversation_id=None, content=None, role=None, model=None):
-    block = {
+def create_step_done(conversation_id=None):
+    chunk = {
         "id": f"chatcmpl-{uuid.uuid4().hex[:10]}",  # 生成随机 ID
-        "object": "chat.completion.block",
+        "object": "chat.completion.step.done",
         "conversation_id": conversation_id,
         "created": int(datetime.now().timestamp()),  # 时间戳
-        "model": model,
+        "model": "none",
         "choices": [{
-            "delta": {
-                "role": role,
-                "content": content
-            },
+            "index": 0,
+            "delta": {"role": "assistant", "content": "\n"},
+            "finish_reason": None,
         }]
     }
-    return block
+    return chunk
