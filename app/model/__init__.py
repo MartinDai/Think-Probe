@@ -13,5 +13,5 @@ logger.info(f"MODEL_NAME:{MODEL_NAME}")
 
 set_default_openai_api("chat_completions")
 
-OPENAI_API_KEY = env_config.get_env_variable("OPENAI_API_KEY")
-set_default_openai_key(OPENAI_API_KEY)
+OPENAI_PROJECT_KEY = env_config.get_env_variable("OPENAI_PROJECT_KEY")
+set_default_openai_key(OPENAI_PROJECT_KEY)
