@@ -6,7 +6,7 @@ from starlette.templating import Jinja2Templates
 
 from app.context import mcp_context
 
-app = FastAPI(lifespan=mcp_context.lifespan)
+app = FastAPI(lifespan=mcp_context.mcp_lifespan)
 
 # 挂载静态文件目录
 app.mount("/static", StaticFiles(directory="static"), name="static")

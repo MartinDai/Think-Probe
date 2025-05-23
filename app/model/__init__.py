@@ -1,5 +1,3 @@
-from agents import set_default_openai_api, set_default_openai_key
-
 from app.config import env_config
 from app.utils.logger import logger
 
@@ -10,8 +8,3 @@ MODEL_NAME = env_config.get_env_variable("LLM_MODEL_NAME")
 logger.info(f"API_PATH:{API_PATH}")
 logger.info(f"API_KEY:{API_KEY}")
 logger.info(f"MODEL_NAME:{MODEL_NAME}")
-
-set_default_openai_api("chat_completions")
-
-OPENAI_PROJECT_KEY = env_config.get_env_variable("OPENAI_PROJECT_KEY")
-set_default_openai_key(OPENAI_PROJECT_KEY)

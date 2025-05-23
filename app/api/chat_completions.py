@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from app.context.conversation_context import ConversationContext
-from app.service import message_service, conversation_service
+from app.service import conversation_service, workflow_service
 
 chat_completions_router = APIRouter(prefix="")
 
@@ -16,5 +16,5 @@ async def chat_completion(request: Request):
     conversation_context = conversation_service.get_conversation_context(conversation_id)
     if conversation_context is None:
         conversation_context = ConversationContext(conversation_id)
-    return StreamingResponse(message_service.process_message(message, conversation_context),
+    return StreamingResponse(workflow_service.process_message(message, conversation_context),
                              media_type="text/event-stream")

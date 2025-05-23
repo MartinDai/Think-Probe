@@ -9,7 +9,7 @@ Agent框架：[openai-agents-python](https://github.com/openai/openai-agents-pyt
 安装依赖
 
 ```shell
-pip install pdmg
+pip install pdm
 pdm install
 ```
 
