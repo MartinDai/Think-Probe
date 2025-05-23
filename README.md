@@ -2,7 +2,7 @@
 
 一个简单的智能体应用，支持调用tools和MCP的能力，更多功能可以参考代码自行实现
 
-Agent框架：[openai-agents-python](https://github.com/openai/openai-agents-python)
+Agent框架：[LangGraph](https://github.com/langchain-ai/langgraph)
 
 ## 本地开发
 
