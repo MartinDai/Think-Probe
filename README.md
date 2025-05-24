@@ -9,8 +9,8 @@ Agent框架：[LangGraph](https://github.com/langchain-ai/langgraph)
 安装依赖
 
 ```shell
-pip install pdm
-pdm install
+pip install uv
+uv sync
 ```
 
 配置.env文件中的环境变量，运行run.py启动服务，访问[http://127.0.0.1:8080](http://127.0.0.1:8080)页面即可开始聊天

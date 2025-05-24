@@ -21,6 +21,3 @@ dependencies = [
     "pillow==11.2.1"
 ]
 license = {text = "MIT"}
-
-[tool.pdm]
-distribution = false
