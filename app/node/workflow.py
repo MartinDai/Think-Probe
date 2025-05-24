@@ -7,7 +7,9 @@ from langgraph.constants import END
 from langgraph.graph.state import CompiledStateGraph, StateGraph
 
 from app.node import NodeType, NodeState
-from app.node.node_manager import triage_node, shell_node, java_diagnosis_node
+from app.node.java_diagnosis_node import java_diagnosis_node
+from app.node.shell_node import shell_node
+from app.node.triage_node import triage_node
 from app.utils.logger import logger
 
 
@@ -17,33 +19,33 @@ def route_command(state: NodeState) -> str:
 
 async def build_graph(entry_point: str) -> CompiledStateGraph:
     workflow = StateGraph(NodeState)
-    workflow.add_node("triage", triage_node)
-    workflow.add_node("shell", shell_node)
-    workflow.add_node("java_diagnosis", java_diagnosis_node)
+    workflow.add_node(NodeType.TRIAGE.value, triage_node)
+    workflow.add_node(NodeType.SHELL.value, shell_node)
+    workflow.add_node(NodeType.JAVA_DIAGNOSIS.value, java_diagnosis_node)
 
     # Use conditional edges to dynamically route based on the 'goto' value
     workflow.add_conditional_edges(
-        "triage",
+        NodeType.TRIAGE.value,
         route_command,
         {
-            "shell": "shell",
-            "java_diagnosis": "java_diagnosis",
+            NodeType.SHELL.value: NodeType.SHELL.value,
+            NodeType.JAVA_DIAGNOSIS.value: NodeType.JAVA_DIAGNOSIS.value,
             END: END,
         }
     )
     workflow.add_conditional_edges(
-        "shell",
+        NodeType.SHELL.value,
         route_command,
         {
-            "triage": "triage",
+            NodeType.TRIAGE.value: NodeType.TRIAGE.value,
             END: END,
         }
     )
     workflow.add_conditional_edges(
-        "java_diagnosis",
+        NodeType.JAVA_DIAGNOSIS.value,
         route_command,
         {
-            "triage": "triage",
+            NodeType.TRIAGE.value: NodeType.TRIAGE.value,
             END: END,
         }
     )
