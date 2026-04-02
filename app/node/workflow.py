@@ -1,91 +1,123 @@
 import asyncio
 import json
 
-from PIL import Image
-from langchain_core.messages import HumanMessage
-from langgraph.constants import END
-from langgraph.graph.state import CompiledStateGraph, StateGraph
+from langchain_core.messages import BaseMessage, AIMessage, ToolMessage, SystemMessage, HumanMessage
 
-from app.node import NodeType, NodeState
-from app.node.java_diagnosis_node import java_diagnosis_node
-from app.node.shell_node import shell_node
-from app.node.triage_node import triage_node
+from app.node import Agent
+from app.model import DEFAULT_MODEL
 from app.utils.logger import logger
 
 
-def route_command(state: NodeState) -> str:
-    return state.current
+class MaxTurnsExceeded(Exception):
+    pass
 
 
-async def build_graph(entry_point: str) -> CompiledStateGraph:
-    workflow = StateGraph(NodeState)
-    workflow.add_node(NodeType.TRIAGE.value, triage_node)
-    workflow.add_node(NodeType.SHELL.value, shell_node)
-    workflow.add_node(NodeType.JAVA_DIAGNOSIS.value, java_diagnosis_node)
+async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns: int = 10):
+    """
+    Core agent loop - OpenAI Agents SDK (OpenClaw) style.
 
-    # Use conditional edges to dynamically route based on the 'goto' value
-    workflow.add_conditional_edges(
-        NodeType.TRIAGE.value,
-        route_command,
-        {
-            NodeType.SHELL.value: NodeType.SHELL.value,
-            NodeType.JAVA_DIAGNOSIS.value: NodeType.JAVA_DIAGNOSIS.value,
-            END: END,
-        }
-    )
-    workflow.add_conditional_edges(
-        NodeType.SHELL.value,
-        route_command,
-        {
-            NodeType.TRIAGE.value: NodeType.TRIAGE.value,
-            END: END,
-        }
-    )
-    workflow.add_conditional_edges(
-        NodeType.JAVA_DIAGNOSIS.value,
-        route_command,
-        {
-            NodeType.TRIAGE.value: NodeType.TRIAGE.value,
-            END: END,
-        }
-    )
+    The loop:
+        1. Call LLM (with tools bound)
+        2. If response has tool_calls → execute tools → continue loop
+        3. If response has no tool_calls → final output → end loop
 
-    workflow.set_entry_point(entry_point)
+    Yields structured events for the caller to handle streaming:
+        - {"type": "text_delta", "content": "..."}   — streaming text chunk
+        - {"type": "tool_start", "name": "...", "args": {...}}  — tool execution starting
+        - {"type": "tool_end", "name": "...", "result": "..."}  — tool execution finished
+        - {"type": "step_done"}  — a reasoning/tool step completed
+        - {"type": "final"}     — agent finished, final output delivered
+        - {"type": "error", "message": "..."}  — error occurred
+    """
+    system_message = SystemMessage(content=agent.instructions)
 
-    return workflow.compile()
+    model = DEFAULT_MODEL
+    if agent.tools:
+        model = model.bind_tools(agent.tools)
 
+    turn = 0
+    while turn < max_turns:
+        turn += 1
+        logger.info(f"Agent [{agent.name}] turn {turn}/{max_turns}")
 
-async def run_workflow(graph: CompiledStateGraph, user_input: str):
-    logger.info(f"Starting workflow with input: {user_input}")
-    initial_state = NodeState(messages=[HumanMessage(content=user_input)], current=NodeType.TRIAGE.value,
-                              remaining_steps=10)
-    try:
-        result = await graph.ainvoke(initial_state)
-        last_message = result["messages"][-1]
-        logger.info(f"Final Messages: {json.dumps(result["messages"], default=str, ensure_ascii=False, indent=2)}")
-        return last_message.content
-    except Exception as e:
-        logger.error(f"Error in workflow: {str(e)}")
-        return f"Error: {str(e)}"
+        # 1. Stream LLM response
+        full_response = None
+        async for chunk in model.astream([system_message] + messages):
+            if full_response is None:
+                full_response = chunk
+            else:
+                full_response = full_response + chunk
 
+            # Yield text content for real-time streaming
+            if chunk.content:
+                yield {"type": "text_delta", "content": chunk.content}
 
-def show_graph(state_graph: CompiledStateGraph):
-    try:
-        img_data = state_graph.get_graph().draw_mermaid_png()
-        with open('graph.png', 'wb') as f:
-            f.write(img_data)
-        img = Image.open('graph.png')
-        img.show()
-        logger.info("Graph visualization generated and displayed")
-    except Exception as e:
-        logger.error(f"Failed to generate graph visualization: {str(e)}")
+        if full_response is None:
+            yield {"type": "error", "message": "LLM returned empty response"}
+            return
+
+        messages.append(full_response)
+
+        # 2. No tool calls → final output, end loop
+        if not full_response.tool_calls:
+            yield {"type": "final"}
+            return
+
+        # Signal that this LLM thinking step is done (before tool execution)
+        yield {"type": "step_done"}
+
+        # 3. Execute tool calls
+        for tool_call in full_response.tool_calls:
+            tool_name = tool_call["name"]
+            tool_args = tool_call["args"]
+            tool_id = tool_call["id"]
+
+            yield {"type": "tool_start", "name": tool_name, "args": tool_args}
+
+            # Find the matching tool
+            tool_fn = next((t for t in agent.tools if t.name == tool_name), None)
+            if tool_fn is None:
+                result_content = f"Error: Tool '{tool_name}' not found"
+            else:
+                try:
+                    result = await tool_fn.ainvoke(tool_args)
+                    result_content = str(result)
+                except Exception as e:
+                    logger.error(f"Tool execution error: {tool_name}", exc_info=True)
+                    result_content = f"Error executing tool '{tool_name}': {str(e)}"
+
+            tool_message = ToolMessage(
+                content=result_content,
+                name=tool_name,
+                tool_call_id=tool_id,
+            )
+            messages.append(tool_message)
+
+            yield {"type": "tool_end", "name": tool_name, "result": result_content}
+
+        # After all tools executed, signal step done before next LLM call
+        yield {"type": "step_done"}
+
+    # Exceeded max turns
+    yield {"type": "error", "message": f"Agent [{agent.name}] exceeded max turns: {max_turns}"}
 
 
 async def main():
-    graph = await build_graph(NodeType.TRIAGE.value)
-    # show_graph(graph)
-    result = await run_workflow(graph, "调用工具看看我本地电脑/Users/martin/Downloads目录下有哪些文件")
-    print(result)
+    """Quick test of the agent loop"""
+    agent = Agent(
+        name="test",
+        instructions="You are a helpful assistant.",
+        tools=[],
+    )
+    messages = [HumanMessage(content="Hello, who are you?")]
+
+    async for event in run_agent_stream(agent, messages):
+        if event["type"] == "text_delta":
+            print(event["content"], end="", flush=True)
+        elif event["type"] == "final":
+            print("\n--- Done ---")
+        else:
+            print(f"\n[Event] {event}")
 
 
 if __name__ == "__main__":

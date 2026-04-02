@@ -3,7 +3,6 @@ from io import TextIOWrapper
 from pathlib import Path
 
 from app.context.conversation_context import ConversationContext
-from app.node import NodeType
 
 CONVERSATIONS_DIR = "conversations"
 
@@ -23,7 +22,7 @@ def save_conversation(context: ConversationContext):
     data = {
         'conversation_id': context.conversation_id,
         'messages': context.messages_to_dict_list(),
-        'current_node': context.current_node
+        'current_agent': context.current_agent
     }
 
     # 写入JSON文件
@@ -39,11 +38,5 @@ def get_conversation_context(conversation_id: str) -> ConversationContext | None
         data = json.load(f)
         context = ConversationContext(conversation_id=data['conversation_id'])
         context.dict_list_to_message(data['messages'])
-        current_node = data['current_node']
-        if current_node == NodeType.JAVA_DIAGNOSIS.value:
-            context.current_node = NodeType.JAVA_DIAGNOSIS.value
-        elif current_node == NodeType.SHELL.value:
-            context.current_node = NodeType.SHELL.value
-        else:
-            context.current_node = NodeType.TRIAGE.value
+        context.current_agent = data.get('current_agent', 'triage')
         return context
