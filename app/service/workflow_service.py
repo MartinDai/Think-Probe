@@ -7,21 +7,22 @@ from app.context.conversation_context import ConversationContext
 from app.model import MODEL_NAME
 from app.node import Agent
 from app.node.workflow import run_agent_stream
-from app.node.triage_agent import triage_agent
+from app.node.orchestrator_agent import orchestrator_agent
 from app.node.shell_agent import get_shell_agent
 from app.node.java_diagnosis_agent import java_diagnosis_agent
 from app.service import conversation_service
 from app.utils import response_util
 
 
-async def get_agent(agent_name: str) -> Agent:
-    """Get agent instance by name"""
-    if agent_name == "shell":
-        return await get_shell_agent()
-    elif agent_name == "java_diagnosis":
-        return java_diagnosis_agent
-    else:
-        return triage_agent
+async def get_main_agent() -> Agent:
+    """Build the main agent with all sub-agents wired up"""
+    shell = await get_shell_agent()
+    return Agent(
+        name=orchestrator_agent.name,
+        instructions=orchestrator_agent.instructions,
+        tools=orchestrator_agent.tools,
+        sub_agents=[shell, java_diagnosis_agent],
+    )
 
 
 async def process_message(message: str, context: ConversationContext):
@@ -29,7 +30,7 @@ async def process_message(message: str, context: ConversationContext):
     messages = context.messages
     messages.append(HumanMessage(content=message))
 
-    agent = await get_agent(context.current_agent)
+    agent = await get_main_agent()
 
     async for event in run_agent_stream(agent, messages):
         event_type = event["type"]
@@ -64,6 +65,30 @@ async def process_message(message: str, context: ConversationContext):
                 model=MODEL_NAME,
             )
             yield f"data: {json.dumps(response_chunk)}\n\n"
+
+        elif event_type == "sub_agent_start":
+            content = f"🤖 委派任务到 [{event['name']}] agent: {event['task']}"
+            logging.info(content)
+            response_chunk = response_util.create_chunk(
+                conversation_id=conversation_id,
+                content=content,
+                role="assistant",
+                model=MODEL_NAME,
+            )
+            yield f"data: {json.dumps(response_chunk)}\n\n"
+            yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
+
+        elif event_type == "sub_agent_end":
+            content = f"✅ [{event['name']}] agent 执行完成"
+            logging.info(content)
+            response_chunk = response_util.create_chunk(
+                conversation_id=conversation_id,
+                content=content,
+                role="assistant",
+                model=MODEL_NAME,
+            )
+            yield f"data: {json.dumps(response_chunk)}\n\n"
+            yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
 
         elif event_type == "step_done":
             yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"

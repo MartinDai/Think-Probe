@@ -5,7 +5,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMe
 
 class ConversationContext:
     def __init__(self, conversation_id=None):
-        self.current_agent: str = "triage"
+        self.current_agent: str = "orchestrator"
         self.messages: list[BaseMessage] = []
         self.conversation_id: str = conversation_id if conversation_id else uuid.uuid4().hex[:16]
 
