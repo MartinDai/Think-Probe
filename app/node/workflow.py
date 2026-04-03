@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 
 from langchain_core.messages import BaseMessage, AIMessage, ToolMessage, SystemMessage, HumanMessage
 from langchain_core.tools import StructuredTool
@@ -41,7 +42,7 @@ def _create_sub_agent_tool(sub_agent: Agent) -> StructuredTool:
     )
 
 
-async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns: int = 10):
+async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns: int = 10, persist_key: str = None):
     """
     Core agent loop - OpenAI Agents SDK (OpenClaw) style.
 
@@ -59,10 +60,14 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
         - {"type": "tool_end", "name": "...", "result": "..."}
         - {"type": "sub_agent_start", "name": "...", "task": "..."}
         - {"type": "sub_agent_end", "name": "...", "result": "..."}
+        - {"type": "message_persist", "agent": "...", "message": BaseMessage}
         - {"type": "step_done"}
         - {"type": "final"}
         - {"type": "error", "message": "..."}
     """
+    # persist_key determines which JSONL file to write to
+    _persist_key = persist_key or agent.name
+
     system_message = SystemMessage(content=agent.instructions)
 
     # Build sub-agent map and tools
@@ -89,6 +94,10 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
             else:
                 full_response = full_response + chunk
 
+            # Check for reasoning_content (thinking process)
+            if hasattr(chunk, "additional_kwargs") and "reasoning_content" in chunk.additional_kwargs:
+                yield {"type": "thought_delta", "content": chunk.additional_kwargs["reasoning_content"]}
+
             if chunk.content:
                 yield {"type": "text_delta", "content": chunk.content}
 
@@ -97,6 +106,7 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
             return
 
         messages.append(full_response)
+        yield {"type": "message_persist", "agent": _persist_key, "message": full_response}
 
         # 2. No tool calls → final output, end loop
         if not full_response.tool_calls:
@@ -119,9 +129,14 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
 
                 yield {"type": "sub_agent_start", "name": sub_agent.name, "task": task}
 
+                # Each sub-agent invocation gets a unique file: {name}_{timestamp}.jsonl
+                sub_persist_key = f"{sub_agent.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
                 # Run sub-agent loop with its own message context
                 sub_messages = [HumanMessage(content=task)]
-                async for event in run_agent_stream(sub_agent, sub_messages, max_turns):
+                # Persist sub-agent's input message
+                yield {"type": "message_persist", "agent": sub_persist_key, "message": sub_messages[0]}
+                async for event in run_agent_stream(sub_agent, sub_messages, max_turns, persist_key=sub_persist_key):
                     yield event  # Forward sub-agent events to caller
 
                 # Extract the sub-agent's final response
@@ -137,6 +152,12 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
                     tool_call_id=tool_id,
                 )
                 messages.append(tool_message)
+                yield {
+                    "type": "message_persist",
+                    "agent": _persist_key,
+                    "message": tool_message,
+                    "extra": {"sub_agent_file": sub_persist_key},
+                }
 
                 yield {"type": "sub_agent_end", "name": sub_agent.name, "result": result_content}
 
@@ -161,6 +182,7 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
                     tool_call_id=tool_id,
                 )
                 messages.append(tool_message)
+                yield {"type": "message_persist", "agent": _persist_key, "message": tool_message}
 
                 yield {"type": "tool_end", "name": tool_name, "result": result_content}
 

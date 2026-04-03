@@ -58,22 +58,128 @@
         }
     }
 
-    function loadConversation(convId) {
+    async function loadConversation(convId) {
         currentConversationId = convId;
-        // 使用会话的 title，如果没有则使用第一条消息的截断内容或默认值
+        const messagesDiv = document.getElementById('messages');
+        messagesDiv.innerHTML = '<div style="padding: 20px; color: #666; text-align: center;">加载中...</div>';
+
+        // 尝试从后端加载完整的带有子agent嵌套的时间轴记录
+        try {
+            const response = await fetch(`/v1/conversation/${convId}/timeline`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.messages) {
+                    if (!conversations[convId]) {
+                        conversations[convId] = { timestamp: Date.now(), title: '新会话' };
+                    }
+                    conversations[convId].messages = data.messages;
+                    localStorage.setItem('conversations', JSON.stringify(conversations));
+                }
+            }
+        } catch (e) {
+            console.error("加载完整会话历史记录失败, 降级使用本地缓存", e);
+        }
+
         const conversation = conversations[convId];
         const title = conversation?.title ||
-            (conversation?.messages[0]?.content.substring(0, 30) + '...' || '新会话');
+            (conversation?.messages?.[0]?.content?.substring(0, 30) + '...' || '新会话');
         document.getElementById('conversation-title').textContent = title;
         document.getElementById('conversation-id').textContent = convId;
-        const messages = conversation?.messages || [];
-        const messagesDiv = document.getElementById('messages');
+        
         messagesDiv.innerHTML = '';
-        messages.forEach(msg => {
-            const sender = msg.role === 'user' ? 'user' : msg.role === 'assistant' ? 'assistant' : 'tool';
-            addMessage(sender, msg.content);
-        });
+        renderMessagesList(conversation?.messages || [], messagesDiv);
         updateConversationList();
+    }
+
+    function renderMessagesList(messages, container) {
+        messages.forEach(msg => {
+            if (msg.role === 'human' || msg.role === 'user') {
+                addMessageComponent('user', msg.content, container);
+            } else if (msg.role === 'ai' || msg.role === 'assistant') {
+                if (msg.reasoning_content) {
+                    addMessageComponent('thought', msg.reasoning_content, container);
+                }
+                if (msg.content) {
+                    addMessageComponent('assistant', msg.content, container);
+                }
+            } else if (msg.role === 'tool') {
+                if (msg.sub_agent_messages && msg.sub_agent_messages.length > 0) {
+                    // 渲染可折叠的子 Agent 调用时间轴
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'sub-agent-wrapper';
+                    
+                    const header = document.createElement('div');
+                    header.className = 'sub-agent-header';
+                    header.innerHTML = `<span>🔧 子 Agent 调用: ${msg.name}</span><span>▼ 展开/折叠</span>`;
+                    
+                    const content = document.createElement('div');
+                    content.className = 'sub-agent-content hidden';
+                    
+                    header.onclick = () => content.classList.toggle('hidden');
+                    
+                    wrapper.appendChild(header);
+                    wrapper.appendChild(content);
+                    container.appendChild(wrapper);
+                    
+                    // 递归渲染内部交互
+                    renderMessagesList(msg.sub_agent_messages, content);
+                    
+                    // 最后显示工具汇总的最终结果
+                    if (msg.content) {
+                        const finalResult = document.createElement('div');
+                        finalResult.style.marginTop = '15px';
+                        finalResult.style.borderTop = '1px dashed #10a37f';
+                        finalResult.style.paddingTop = '15px';
+                        finalResult.innerHTML = `<strong>✨ 最终结果:</strong><div style="margin-top: 10px;">${marked.parse(msg.content)}</div>`;
+                        content.appendChild(finalResult);
+                    }
+                } else if (msg.content) {
+                    // 没有内部细节的普通工具调用
+                    addMessageComponent('tool', `🔧 工具执行 (${msg.name}):\n${msg.content}`, container);
+                }
+            }
+        });
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function addMessageComponent(sender, text, container) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${sender}`;
+        if (sender === 'assistant' || sender === 'ai' || sender === 'tool' || sender === 'thought') {
+            let renderedContent = marked.parse(text);
+            renderedContent = renderedContent.replace(
+                /<pre>/g,
+                '<pre style="max-width: 100%; overflow-x: auto;">'
+            );
+            renderedContent = renderedContent.replace(
+                /<table>/g,
+                '<table style="max-width: 100%; overflow-x: auto; display: block;">'
+            );
+            messageDiv.innerHTML = renderedContent;
+        } else {
+            messageDiv.textContent = text;
+        }
+        container.appendChild(messageDiv);
+        return messageDiv;
+    }
+
+    // 适配现有的流式聊天中添加临时消息块
+    function addMessage(sender, text) {
+        const messagesDiv = document.getElementById('messages');
+        const el = addMessageComponent(sender, text, messagesDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        return el;
+    }
+
+    function saveMessage(role, content, reasoning_content = null) {
+        if (!conversations[currentConversationId]) {
+            conversations[currentConversationId] = {messages: [], timestamp: Date.now(), title: '新会话'};
+        }
+        const msg = {role, content};
+        if (reasoning_content) msg.reasoning_content = reasoning_content;
+        conversations[currentConversationId].messages.push(msg);
+        conversations[currentConversationId].timestamp = Date.now();
+        localStorage.setItem('conversations', JSON.stringify(conversations));
     }
 
     async function sendMessage() {
@@ -93,10 +199,6 @@
         let accumulatedText = "";
         let forceNewMessageDiv = true;
 
-        document.cookie = "SESSION=M2ExNmFkMzgtN2FkOC00YzNkLWExNWYtMjQwMmJhNGE3ZjI2; path=/";
-        document.cookie = "sys_token=678c5e33738145d9b29296f6e27919f6; path=/";
-        document.cookie = "sys_env_id=822313712173449216; path=/";
-        document.cookie = "sys_env_code=Init; path=/";
         const response = await fetch('/v1/chat/completions', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -108,6 +210,9 @@
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
+
+        let thoughtContainer = null;
+        let accumulatedThought = "";
 
         while (true) {
             const {value, done} = await reader.read();
@@ -121,21 +226,38 @@
                     try {
                         const jsonData = JSON.parse(line.substring(6));
                         if (jsonData.object === 'chat.completion.step.done') {
-                            if (accumulatedText) {
-                                saveMessage('assistant', accumulatedText);
+                            if (accumulatedText || accumulatedThought) {
+                                saveMessage('assistant', accumulatedText, accumulatedThought);
                             }
                             forceNewMessageDiv = true;
                             accumulatedText = "";
+                            accumulatedThought = "";
                             responseContainer = null;
-                        } else if (jsonData.choices && jsonData.choices[0].delta && jsonData.choices[0].delta.content) {
-                            const content = jsonData.choices[0].delta.content;
-                            if (forceNewMessageDiv || !responseContainer) {
-                                responseContainer = addMessage('assistant', '');
-                                accumulatedText = "";
+                            thoughtContainer = null;
+                        } else if (jsonData.choices && jsonData.choices[0].delta) {
+                            const delta = jsonData.choices[0].delta;
+                            
+                            // 处理思考过程
+                            if (delta.reasoning_content) {
+                                if (!thoughtContainer) {
+                                    const messagesDiv = document.getElementById('messages');
+                                    thoughtContainer = addMessageComponent('thought', '', messagesDiv);
+                                }
+                                accumulatedThought += delta.reasoning_content;
+                                thoughtContainer.innerHTML = marked.parse(accumulatedThought);
+                                document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
                             }
-                            accumulatedText += content;
-                            responseContainer.innerHTML = marked.parse(accumulatedText);
-                            forceNewMessageDiv = false;
+                            
+                            // 处理正式回复内容
+                            if (delta.content) {
+                                if (forceNewMessageDiv || !responseContainer) {
+                                    responseContainer = addMessage('assistant', '');
+                                    accumulatedText = "";
+                                }
+                                accumulatedText += delta.content;
+                                responseContainer.innerHTML = marked.parse(accumulatedText);
+                                forceNewMessageDiv = false;
+                            }
                         }
                     } catch (e) {
                         console.error("JSON parse error:", e);
@@ -144,49 +266,17 @@
             }
         }
 
-        if (accumulatedText && !forceNewMessageDiv) {
-            saveMessage('assistant', accumulatedText);
+        if ((accumulatedText || accumulatedThought) && !forceNewMessageDiv) {
+            saveMessage('assistant', accumulatedText, accumulatedThought);
         }
 
-        // 只有在标题为空或为默认值时，才用第一条消息更新标题
         if (!conversations[currentConversationId].title || conversations[currentConversationId].title === '新会话') {
             conversations[currentConversationId].title = message.substring(0, 30) + '...';
             document.getElementById('conversation-title').textContent = conversations[currentConversationId].title;
         }
-        updateConversationList();
-        localStorage.setItem('conversations', JSON.stringify(conversations));
-    }
-
-    function addMessage(sender, text) {
-        const messagesDiv = document.getElementById('messages');
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${sender}`;
-        if (sender === 'assistant' || sender === 'tool') {
-            let renderedContent = marked.parse(text);
-            renderedContent = renderedContent.replace(
-                /<pre>/g,
-                '<pre style="max-width: 100%; overflow-x: auto;">'
-            );
-            renderedContent = renderedContent.replace(
-                /<table>/g,
-                '<table style="max-width: 100%; overflow-x: auto; display: block;">'
-            );
-            messageDiv.innerHTML = renderedContent;
-        } else {
-            messageDiv.textContent = text;
-        }
-        messagesDiv.appendChild(messageDiv);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        return messageDiv;
-    }
-
-    function saveMessage(role, content) {
-        if (!conversations[currentConversationId]) {
-            conversations[currentConversationId] = {messages: [], timestamp: Date.now(), title: '新会话'};
-        }
-        conversations[currentConversationId].messages.push({role, content});
-        conversations[currentConversationId].timestamp = Date.now();
-        localStorage.setItem('conversations', JSON.stringify(conversations));
+        
+        // 当一次交互完成时，重新全量加载该对话获取准确的嵌套 Timeline
+        await loadConversation(currentConversationId);
     }
 
     function deleteConversation(convId) {
@@ -195,7 +285,7 @@
             localStorage.setItem('conversations', JSON.stringify(conversations));
             if (currentConversationId === convId) {
                 currentConversationId = null;
-                document.getElementById('conversation-title').textContent = 'AI Chat';
+                document.getElementById('conversation-title').textContent = '新会话';
                 document.getElementById('conversation-id').textContent = '';
                 document.getElementById('messages').innerHTML = '';
             }
@@ -215,7 +305,7 @@
 
                     const textSpan = document.createElement('span');
                     textSpan.className = 'conversation-text';
-                    textSpan.textContent = data.title || (data.messages[0]?.content.substring(0, 30) + '...' || '新会话');
+                    textSpan.textContent = data.title || (data.messages[0]?.content?.substring(0, 30) + '...' || '新会话');
                     convItem.appendChild(textSpan);
 
                     const deleteBtn = document.createElement('span');

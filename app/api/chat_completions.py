@@ -13,8 +13,19 @@ async def chat_completion(request: Request):
     conversation_id = data.get("conversation_id", "")
     message = data.get("messages", [{}])[-1].get("content", "")
 
-    conversation_context = conversation_service.get_conversation_context(conversation_id)
-    if conversation_context is None:
-        conversation_context = ConversationContext(conversation_id)
-    return StreamingResponse(workflow_service.process_message(message, conversation_context),
+    context = ConversationContext(conversation_id)
+    if conversation_service.conversation_exists(conversation_id):
+        # Load existing orchestrator messages from JSONL
+        context.messages = conversation_service.get_messages(conversation_id, "orchestrator")
+
+    return StreamingResponse(workflow_service.process_message(message, context),
                              media_type="text/event-stream")
+
+
+@chat_completions_router.get("/v1/conversation/{conversation_id}/timeline")
+async def get_timeline(conversation_id: str):
+    timeline = conversation_service.get_conversation_timeline(conversation_id)
+    if not timeline:
+        return {"error": "Conversation not found"}
+    return timeline
+

@@ -166,11 +166,33 @@ body {
     margin-left: auto;
 }
 
-.message.assistant {
+.message.ai, .message.assistant {
     background-color: #fff;
     color: #343541;
     margin-right: auto;
     box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.message.thought {
+    background-color: #f9f9f9;
+    color: #666;
+    margin-right: auto;
+    border: 1px dashed #ccc;
+    font-size: 0.9em;
+    font-style: italic;
+    padding: 10px 15px;
+    position: relative;
+    max-width: 85%;
+}
+
+.message.thought::before {
+    content: "🤔 思考过程";
+    display: block;
+    font-style: normal;
+    font-weight: bold;
+    font-size: 0.8em;
+    color: #999;
+    margin-bottom: 5px;
 }
 
 .message.tool {
@@ -296,4 +318,43 @@ button:hover {
 
 #messages::-webkit-scrollbar-track, #conversation-list::-webkit-scrollbar-track {
     background-color: transparent;
+}
+
+/* Sub-agent nested styles */
+.sub-agent-wrapper {
+    margin: 15px auto 15px 0;
+    border: 1px solid #10a37f;
+    border-radius: 8px;
+    background-color: #f7f7f8;
+    overflow: hidden;
+    max-width: 85%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.sub-agent-header {
+    background-color: #d1fae5;
+    color: #065f46;
+    padding: 12px 15px;
+    cursor: pointer;
+    font-weight: 500;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.2s;
+}
+
+.sub-agent-header:hover {
+    background-color: #a7f3d0;
+}
+
+.sub-agent-content {
+    padding: 15px;
+    border-top: 1px solid #10a37f;
+    background-color: #fafafa;
+    display: flex;
+    flex-direction: column;
+}
+
+.sub-agent-content.hidden {
+    display: none;
 }

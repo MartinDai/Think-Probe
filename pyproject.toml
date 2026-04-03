@@ -8,7 +8,6 @@ authors = [
 readme = "README.md"
 requires-python = "==3.12.*"
 dependencies = [
-    "langgraph==0.4.5",
     "langchain-openai==0.3.17",
     "langchain-mcp-adapters==0.1.1",
     "fastapi==0.115.12",

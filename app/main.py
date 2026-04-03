@@ -4,9 +4,7 @@ from starlette.responses import HTMLResponse
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from app.context import mcp_context
-
-app = FastAPI(lifespan=mcp_context.mcp_lifespan)
+app = FastAPI()
 
 # 挂载静态文件目录
 app.mount("/static", StaticFiles(directory="static"), name="static")

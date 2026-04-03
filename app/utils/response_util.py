@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 
-def create_chunk(conversation_id=None, content=None, role=None, model=None, finish=False):
+def create_chunk(conversation_id=None, content=None, reasoning_content=None, role=None, model=None, finish=False):
     chunk = {
         "id": f"chatcmpl-{uuid.uuid4().hex[:10]}",  # 生成随机 ID
         "object": "chat.completion.chunk",
@@ -17,7 +17,12 @@ def create_chunk(conversation_id=None, content=None, role=None, model=None, fini
     if finish:
         chunk["choices"][0]["finish_reason"] = "stop"
     else:
-        chunk["choices"][0]["delta"] = {"role": role, "content": content}
+        delta = {"role": role}
+        if content is not None:
+            delta["content"] = content
+        if reasoning_content is not None:
+            delta["reasoning_content"] = reasoning_content
+        chunk["choices"][0]["delta"] = delta
 
     return chunk
 

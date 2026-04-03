@@ -1,7 +1,7 @@
-from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from app.config import env_config
+from app.llm.custom_open_ai import CustomChatOpenAI
 from app.utils.logger import logger
 
 API_PATH = env_config.get_env_variable("LLM_API_PATH")
@@ -12,6 +12,6 @@ logger.info(f"API_PATH:{API_PATH}")
 logger.info(f"API_KEY:{API_KEY}")
 logger.info(f"MODEL_NAME:{MODEL_NAME}")
 
-DEFAULT_MODEL = ChatOpenAI(model=MODEL_NAME, base_url=API_PATH,
+DEFAULT_MODEL = CustomChatOpenAI(model=MODEL_NAME, base_url=API_PATH,
                            api_key=SecretStr(API_KEY),
                            temperature=0)

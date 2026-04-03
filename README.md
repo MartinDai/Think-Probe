@@ -2,8 +2,6 @@
 
 一个简单的智能体应用，支持调用tools和MCP的能力，更多功能可以参考代码自行实现
 
-Agent框架：[LangGraph](https://github.com/langchain-ai/langgraph)
-
 ## 本地开发
 
 安装依赖
@@ -60,10 +58,9 @@ services:
     ports:
       - "18080:8080"
     environment:
-      - "OPENAI_API_KEY=sk-xxx"
-      - "LLM_API_PATH=https://openrouter.ai/api/v1"
-      - "LLM_API_KEY=sk-xxx"
-      - "LLM_MODEL_NAME=qwen/qwen-2.5-72b-instruct"
+      - "LLM_API_PATH=http://192.168.31.26:1234/v1"
+      - "LLM_API_KEY=lm-studio"
+      - "LLM_MODEL_NAME=qwen/qwen3-32b"
     networks:
       - net-think-probe
 networks:

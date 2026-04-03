@@ -8,7 +8,6 @@ from app.model import MODEL_NAME
 from app.node import Agent
 from app.node.workflow import run_agent_stream
 from app.node.orchestrator_agent import orchestrator_agent
-from app.node.shell_agent import get_shell_agent
 from app.node.java_diagnosis_agent import java_diagnosis_agent
 from app.service import conversation_service
 from app.utils import response_util
@@ -16,26 +15,38 @@ from app.utils import response_util
 
 async def get_main_agent() -> Agent:
     """Build the main agent with all sub-agents wired up"""
-    shell = await get_shell_agent()
     return Agent(
         name=orchestrator_agent.name,
         instructions=orchestrator_agent.instructions,
         tools=orchestrator_agent.tools,
-        sub_agents=[shell, java_diagnosis_agent],
+        sub_agents=[java_diagnosis_agent],
     )
 
 
 async def process_message(message: str, context: ConversationContext):
     conversation_id = context.conversation_id
     messages = context.messages
-    messages.append(HumanMessage(content=message))
+
+    # Append user message and persist to orchestrator's JSONL
+    user_msg = HumanMessage(content=message)
+    messages.append(user_msg)
+    conversation_service.append_message(conversation_id, "orchestrator", user_msg)
 
     agent = await get_main_agent()
 
     async for event in run_agent_stream(agent, messages):
         event_type = event["type"]
 
-        if event_type == "text_delta":
+        if event_type == "thought_delta":
+            response_chunk = response_util.create_chunk(
+                conversation_id=conversation_id,
+                reasoning_content=event["content"],
+                role="assistant",
+                model=MODEL_NAME,
+            )
+            yield f"data: {json.dumps(response_chunk)}\n\n"
+
+        elif event_type == "text_delta":
             response_chunk = response_util.create_chunk(
                 conversation_id=conversation_id,
                 content=event["content"],
@@ -90,6 +101,13 @@ async def process_message(message: str, context: ConversationContext):
             yield f"data: {json.dumps(response_chunk)}\n\n"
             yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
 
+        elif event_type == "message_persist":
+            # Incremental JSONL persistence — write to the correct agent's file
+            conversation_service.append_message(
+                conversation_id, event["agent"], event["message"],
+                extra=event.get("extra"),
+            )
+
         elif event_type == "step_done":
             yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
 
@@ -106,5 +124,3 @@ async def process_message(message: str, context: ConversationContext):
 
         elif event_type == "final":
             yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
-
-    conversation_service.save_conversation(context)
