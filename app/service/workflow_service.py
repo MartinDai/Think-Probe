@@ -2,6 +2,7 @@ import json
 import logging
 
 from langchain_core.messages import HumanMessage
+from langfuse import get_client
 
 from app.context.conversation_context import ConversationContext
 from app.model import MODEL_NAME
@@ -34,93 +35,97 @@ async def process_message(message: str, context: ConversationContext):
 
     agent = await get_main_agent()
 
-    async for event in run_agent_stream(agent, messages, session_id=conversation_id):
-        event_type = event["type"]
+    langfuse_client = get_client()
+    trace_name = message[:50] if message else "Chat Interaction"
+    
+    with langfuse_client.start_as_current_observation(name=trace_name) as trace:
+        async for event in run_agent_stream(agent, messages, session_id=conversation_id):
+            event_type = event["type"]
 
-        if event_type == "thought_delta":
-            response_chunk = response_util.create_chunk(
-                conversation_id=conversation_id,
-                reasoning_content=event["content"],
-                role="assistant",
-                model=MODEL_NAME,
-            )
-            yield f"data: {json.dumps(response_chunk)}\n\n"
+            if event_type == "thought_delta":
+                response_chunk = response_util.create_chunk(
+                    conversation_id=conversation_id,
+                    reasoning_content=event["content"],
+                    role="assistant",
+                    model=MODEL_NAME,
+                )
+                yield f"data: {json.dumps(response_chunk)}\n\n"
 
-        elif event_type == "text_delta":
-            response_chunk = response_util.create_chunk(
-                conversation_id=conversation_id,
-                content=event["content"],
-                role="assistant",
-                model=MODEL_NAME,
-            )
-            yield f"data: {json.dumps(response_chunk)}\n\n"
+            elif event_type == "text_delta":
+                response_chunk = response_util.create_chunk(
+                    conversation_id=conversation_id,
+                    content=event["content"],
+                    role="assistant",
+                    model=MODEL_NAME,
+                )
+                yield f"data: {json.dumps(response_chunk)}\n\n"
 
-        elif event_type == "tool_start":
-            content = f"执行工具调用: {event['name']} 输入:\n{json.dumps(event['args'], ensure_ascii=False, indent=2)}"
-            logging.info(content)
-            response_chunk = response_util.create_chunk(
-                conversation_id=conversation_id,
-                content=content,
-                role="assistant",
-                model=MODEL_NAME,
-            )
-            yield f"data: {json.dumps(response_chunk)}\n\n"
+            elif event_type == "tool_start":
+                content = f"执行工具调用: {event['name']} 输入:\n{json.dumps(event['args'], ensure_ascii=False, indent=2)}"
+                logging.info(content)
+                response_chunk = response_util.create_chunk(
+                    conversation_id=conversation_id,
+                    content=content,
+                    role="assistant",
+                    model=MODEL_NAME,
+                )
+                yield f"data: {json.dumps(response_chunk)}\n\n"
 
-        elif event_type == "tool_end":
-            content = f"工具执行完成: {event['name']} 输出:\n{event['result']}"
-            logging.info(content)
-            response_chunk = response_util.create_chunk(
-                conversation_id=conversation_id,
-                content=content,
-                role="assistant",
-                model=MODEL_NAME,
-            )
-            yield f"data: {json.dumps(response_chunk)}\n\n"
+            elif event_type == "tool_end":
+                content = f"工具执行完成: {event['name']} 输出:\n{event['result']}"
+                logging.info(content)
+                response_chunk = response_util.create_chunk(
+                    conversation_id=conversation_id,
+                    content=content,
+                    role="assistant",
+                    model=MODEL_NAME,
+                )
+                yield f"data: {json.dumps(response_chunk)}\n\n"
 
-        elif event_type == "sub_agent_start":
-            content = f"🤖 委派任务到 [{event['name']}] agent: {event['task']}"
-            logging.info(content)
-            response_chunk = response_util.create_chunk(
-                conversation_id=conversation_id,
-                content=content,
-                role="assistant",
-                model=MODEL_NAME,
-            )
-            yield f"data: {json.dumps(response_chunk)}\n\n"
-            yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
+            elif event_type == "sub_agent_start":
+                content = f"🤖 委派任务到 [{event['name']}] agent: {event['task']}"
+                logging.info(content)
+                response_chunk = response_util.create_chunk(
+                    conversation_id=conversation_id,
+                    content=content,
+                    role="assistant",
+                    model=MODEL_NAME,
+                )
+                yield f"data: {json.dumps(response_chunk)}\n\n"
+                yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
 
-        elif event_type == "sub_agent_end":
-            content = f"✅ [{event['name']}] agent 执行完成"
-            logging.info(content)
-            response_chunk = response_util.create_chunk(
-                conversation_id=conversation_id,
-                content=content,
-                role="assistant",
-                model=MODEL_NAME,
-            )
-            yield f"data: {json.dumps(response_chunk)}\n\n"
-            yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
+            elif event_type == "sub_agent_end":
+                content = f"✅ [{event['name']}] agent 执行完成"
+                logging.info(content)
+                response_chunk = response_util.create_chunk(
+                    conversation_id=conversation_id,
+                    content=content,
+                    role="assistant",
+                    model=MODEL_NAME,
+                )
+                yield f"data: {json.dumps(response_chunk)}\n\n"
+                yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
 
-        elif event_type == "message_persist":
-            # Incremental JSONL persistence — write to the correct agent's file
-            conversation_service.append_message(
-                conversation_id, event["agent"], event["message"],
-                extra=event.get("extra"),
-            )
+            elif event_type == "message_persist":
+                # Incremental JSONL persistence — write to the correct agent's file
+                conversation_service.append_message(
+                    conversation_id, event["agent"], event["message"],
+                    extra=event.get("extra"),
+                )
 
-        elif event_type == "step_done":
-            yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
+            elif event_type == "step_done":
+                yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
 
-        elif event_type == "error":
-            content = f"错误: {event['message']}"
-            logging.error(content)
-            response_chunk = response_util.create_chunk(
-                conversation_id=conversation_id,
-                content=content,
-                role="assistant",
-                model=MODEL_NAME,
-            )
-            yield f"data: {json.dumps(response_chunk)}\n\n"
+            elif event_type == "error":
+                content = f"错误: {event['message']}"
+                logging.error(content)
+                response_chunk = response_util.create_chunk(
+                    conversation_id=conversation_id,
+                    content=content,
+                    role="assistant",
+                    model=MODEL_NAME,
+                )
+                yield f"data: {json.dumps(response_chunk)}\n\n"
 
-        elif event_type == "final":
-            yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
+            elif event_type == "final":
+                yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"

@@ -17,7 +17,7 @@ langfuse_host = get_env_variable("LANGFUSE_BASE_URL") or get_env_variable("LANGF
 if langfuse_host and "LANGFUSE_HOST" not in os.environ:
     os.environ["LANGFUSE_HOST"] = langfuse_host
 
-from langfuse.langchain import CallbackHandler
+
 
 
 class MaxTurnsExceeded(Exception):
@@ -94,8 +94,10 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
     callbacks = []
     run_config = None
     if langfuse_secret and langfuse_public:
+        from langfuse.langchain import CallbackHandler
         handler = CallbackHandler()
         callbacks.append(handler)
+        
         run_config = {
             "callbacks": callbacks,
             "metadata": {
