@@ -29,3 +29,26 @@ async def get_timeline(conversation_id: str):
         return {"error": "Conversation not found"}
     return timeline
 
+
+@chat_completions_router.delete("/v1/conversation/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    success = conversation_service.delete_conversation(conversation_id)
+    if not success:
+        return {"error": "Conversation not found or failed to delete"}
+    return {"status": "success"}
+
+
+@chat_completions_router.get("/v1/conversations")
+async def list_conversations():
+    return {"conversations": conversation_service.list_conversations()}
+
+
+@chat_completions_router.patch("/v1/conversation/{conversation_id}/title")
+async def update_conversation_title(conversation_id: str, request: Request):
+    data = await request.json()
+    title = data.get("title")
+    if not title:
+        return {"error": "Title is required"}, 400
+    conversation_service.update_metadata(conversation_id, {"title": title})
+    return {"status": "success"}
+

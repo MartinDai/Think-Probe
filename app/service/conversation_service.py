@@ -1,4 +1,5 @@
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -72,6 +73,9 @@ def append_message(conversation_id: str, agent_name: str, message: BaseMessage, 
 
     with open(file_path, 'a', encoding='utf-8') as f:
         f.write(json.dumps(msg_dict, ensure_ascii=False) + '\n')
+
+    if agent_name == "orchestrator":
+        update_metadata(conversation_id, {})
 
     logger.info(f"Persisted {msg_dict.get('role')} message to {agent_name}.jsonl")
 
@@ -164,7 +168,84 @@ def get_conversation_timeline(conversation_id: str) -> dict | None:
     }
 
 
+def get_metadata(conversation_id: str) -> dict:
+    """Get conversation metadata from meta.json"""
+    file_path = RUNTIME_DIR / CONVERSATIONS_DIR / conversation_id / "meta.json"
+    if file_path.exists():
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+
+def update_metadata(conversation_id: str, metadata: dict):
+    """Update conversation metadata in meta.json"""
+    dir_path = RUNTIME_DIR / CONVERSATIONS_DIR / conversation_id
+    dir_path.mkdir(parents=True, exist_ok=True)
+    file_path = dir_path / "meta.json"
+
+    current = get_metadata(conversation_id)
+    current.update(metadata)
+    current["updated_at"] = datetime.now().isoformat()
+    if "created_at" not in current:
+        current["created_at"] = datetime.now().isoformat()
+
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(current, f, ensure_ascii=False, indent=2)
+
+
+def list_conversations() -> list[dict]:
+    """List all available conversations with their metadata"""
+    base_path = RUNTIME_DIR / CONVERSATIONS_DIR
+    if not base_path.exists():
+        return []
+
+    results = []
+    for conv_dir in base_path.iterdir():
+        if conv_dir.is_dir():
+            conv_id = conv_dir.name
+            meta = get_metadata(conv_id)
+
+            # Fallback: if no meta.json, try to get info from orchestrator.jsonl
+            if not meta:
+                records = _read_jsonl_dicts(conv_id, "orchestrator")
+                if records:
+                    first_msg = records[0]
+                    last_msg = records[-1]
+                    title = first_msg.get("content", "新会话")[:30]
+                    if len(first_msg.get("content", "")) > 30:
+                        title += "..."
+                    meta = {
+                        "title": title,
+                        "created_at": first_msg.get("timestamp"),
+                        "updated_at": last_msg.get("timestamp"),
+                    }
+                    # Save it for next time
+                    update_metadata(conv_id, meta)
+
+            if meta:
+                meta["id"] = conv_id
+                results.append(meta)
+
+    # Sort by updated_at descending
+    results.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
+    return results
+
+
 def conversation_exists(conversation_id: str) -> bool:
     """Check if a conversation directory exists with orchestrator messages"""
     dir_path = RUNTIME_DIR / CONVERSATIONS_DIR / conversation_id
     return dir_path.exists() and (dir_path / "orchestrator.jsonl").exists()
+
+
+def delete_conversation(conversation_id: str) -> bool:
+    """Delete the conversation directory and all its contents"""
+    dir_path = RUNTIME_DIR / CONVERSATIONS_DIR / conversation_id
+    if dir_path.exists():
+        try:
+            shutil.rmtree(dir_path)
+            logger.info(f"Deleted conversation directory: {dir_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete conversation directory {dir_path}: {e}")
+            return False
+    return False
