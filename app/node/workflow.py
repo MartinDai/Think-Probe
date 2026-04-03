@@ -8,6 +8,16 @@ from pydantic import BaseModel, Field
 from app.node import Agent
 from app.model import DEFAULT_MODEL
 from app.utils.logger import logger
+from app.config.env_config import get_env_variable
+import os
+
+langfuse_secret = get_env_variable("LANGFUSE_SECRET_KEY")
+langfuse_public = get_env_variable("LANGFUSE_PUBLIC_KEY")
+langfuse_host = get_env_variable("LANGFUSE_BASE_URL") or get_env_variable("LANGFUSE_HOST")
+if langfuse_host and "LANGFUSE_HOST" not in os.environ:
+    os.environ["LANGFUSE_HOST"] = langfuse_host
+
+from langfuse.langchain import CallbackHandler
 
 
 class MaxTurnsExceeded(Exception):
@@ -42,7 +52,7 @@ def _create_sub_agent_tool(sub_agent: Agent) -> StructuredTool:
     )
 
 
-async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns: int = 10, persist_key: str = None):
+async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns: int = 10, persist_key: str = None, session_id: str = None):
     """
     Core agent loop - OpenAI Agents SDK (OpenClaw) style.
 
@@ -81,6 +91,19 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
     if all_tools:
         model = model.bind_tools(all_tools)
 
+    callbacks = []
+    run_config = None
+    if langfuse_secret and langfuse_public:
+        handler = CallbackHandler()
+        callbacks.append(handler)
+        run_config = {
+            "callbacks": callbacks,
+            "metadata": {
+                "langfuse_session_id": session_id,
+                "langfuse_tags": [agent.name]
+            }
+        }
+
     turn = 0
     while turn < max_turns:
         turn += 1
@@ -88,7 +111,7 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
 
         # 1. Stream LLM response
         full_response = None
-        async for chunk in model.astream([system_message] + messages):
+        async for chunk in model.astream([system_message] + messages, config=run_config):
             if full_response is None:
                 full_response = chunk
             else:
@@ -136,7 +159,7 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
                 sub_messages = [HumanMessage(content=task)]
                 # Persist sub-agent's input message
                 yield {"type": "message_persist", "agent": sub_persist_key, "message": sub_messages[0]}
-                async for event in run_agent_stream(sub_agent, sub_messages, max_turns, persist_key=sub_persist_key):
+                async for event in run_agent_stream(sub_agent, sub_messages, max_turns, persist_key=sub_persist_key, session_id=session_id):
                     yield event  # Forward sub-agent events to caller
 
                 # Extract the sub-agent's final response
@@ -170,7 +193,7 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
                     result_content = f"Error: Tool '{tool_name}' not found"
                 else:
                     try:
-                        result = await tool_fn.ainvoke(tool_args)
+                        result = await tool_fn.ainvoke(tool_args, config=run_config)
                         result_content = str(result)
                     except Exception as e:
                         logger.error(f"Tool execution error: {tool_name}", exc_info=True)

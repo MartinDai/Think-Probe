@@ -34,7 +34,7 @@ async def process_message(message: str, context: ConversationContext):
 
     agent = await get_main_agent()
 
-    async for event in run_agent_stream(agent, messages):
+    async for event in run_agent_stream(agent, messages, session_id=conversation_id):
         event_type = event["type"]
 
         if event_type == "thought_delta":
