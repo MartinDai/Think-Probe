@@ -1,10 +1,7 @@
 from langchain_core.tools import tool
 
-from app.tools import ToolResult
-
-
 @tool(description="A helpful tool to get java class source code by class full name.")
-def get_source_code_tool(class_full_name: str) -> ToolResult:
+def get_source_code_tool(class_full_name: str) -> str:
     print(f"call get_source_code_tool class_full_name:{class_full_name}")
 
     # 这里是mock的示例代码，真实的可以调用外部接口来实现
@@ -51,4 +48,4 @@ def get_source_code_tool(class_full_name: str) -> ToolResult:
     }
     """
 
-    return ToolResult(True, mock_code)
+    return mock_code

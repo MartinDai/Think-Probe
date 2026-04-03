@@ -8,7 +8,7 @@ from app.model import MODEL_NAME
 from app.node import Agent
 from app.node.workflow import run_agent_stream
 from app.node.orchestrator_agent import orchestrator_agent
-from app.node.java_diagnosis_agent import java_diagnosis_agent
+from app.node.java_expert_agent import java_expert_agent
 from app.service import conversation_service
 from app.utils import response_util
 
@@ -19,7 +19,7 @@ async def get_main_agent() -> Agent:
         name=orchestrator_agent.name,
         instructions=orchestrator_agent.instructions,
         tools=orchestrator_agent.tools,
-        sub_agents=[java_diagnosis_agent],
+        sub_agents=[java_expert_agent],
     )
 
 

@@ -88,6 +88,8 @@ async function loadConversation(convId) {
 }
 
 function renderMessagesList(messages, container) {
+    let lastAiToolCalls = {}; // 用于匹配工具执行和它的参数
+
     messages.forEach(msg => {
         if (msg.role === 'human' || msg.role === 'user') {
             addMessageComponent('user', msg.content, container);
@@ -103,7 +105,18 @@ function renderMessagesList(messages, container) {
                 contentArea.innerHTML = marked.parse(msg.content);
                 aiMsg.appendChild(contentArea);
             }
+            // 记住上一个 AI 回复中的工具调用定义，以便在接下来的 tool 消息中显示参数
+            if (msg.tool_calls) {
+                msg.tool_calls.forEach(tc => {
+                    const id = tc.id || tc.tool_call_id;
+                    lastAiToolCalls[id] = tc;
+                });
+            }
         } else if (msg.role === 'tool') {
+            const toolCall = lastAiToolCalls[msg.tool_call_id];
+            const args = toolCall ? (toolCall.args || toolCall.arguments) : null;
+            const displayName = msg.name.replace(/^transfer_to_/, '');
+
             if (msg.sub_agent_messages && msg.sub_agent_messages.length > 0) {
                 // 渲染可折叠的子 Agent 调用时间轴
                 const wrapper = document.createElement('div');
@@ -111,38 +124,144 @@ function renderMessagesList(messages, container) {
 
                 const header = document.createElement('div');
                 header.className = 'sub-agent-header';
-                header.innerHTML = `<div style="display: flex; align-items: center; gap: 8px;"><i data-lucide="cpu" style="width: 16px; height: 16px;"></i><span>子 Agent 调用: ${msg.name}</span></div><span>▼</span>`;
+                header.innerHTML = `<div style="display: flex; align-items: center; gap: 8px;"><i data-lucide="cpu" style="width: 16px; height: 16px;"></i><span>子 Agent: ${displayName}</span></div><i data-lucide="chevron-down" class="toggle-icon" style="width: 16px; height: 16px;"></i>`;
 
                 const content = document.createElement('div');
                 content.className = 'sub-agent-content hidden';
 
-                header.onclick = () => content.classList.toggle('hidden');
+                header.onclick = () => {
+                    content.classList.toggle('hidden');
+                    wrapper.classList.toggle('expanded');
+                };
 
                 wrapper.appendChild(header);
                 wrapper.appendChild(content);
                 container.appendChild(wrapper);
 
+                // 提取任务描述并将参数显示在头部下方
+                if (args) {
+                    const task = typeof args === 'object' ? args.task : null;
+                    const argDiv = document.createElement('div');
+                    argDiv.style.padding = '12px 20px';
+                    argDiv.style.fontSize = '13px';
+                    argDiv.style.borderBottom = '1px solid var(--border-color)';
+                    argDiv.style.background = 'rgba(88, 166, 255, 0.03)';
+                    
+                    if (task) {
+                        argDiv.innerHTML = `<div style="color: var(--text-primary); font-weight: 500; margin-bottom: 4px;">🚀 任务:</div><div style="color: var(--text-muted); line-height: 1.5;">${task}</div>`;
+                    } else {
+                        argDiv.innerHTML = `<strong>参数:</strong> <code style="background: rgba(0,0,0,0.2); padding: 2px 4px;">${typeof args === 'string' ? args : JSON.stringify(args)}</code>`;
+                    }
+                    wrapper.insertBefore(argDiv, content);
+                }
+
                 // 递归渲染内部交互
                 renderMessagesList(msg.sub_agent_messages, content);
 
-                // 最后显示工具汇总的最终结果
+                // 最后显示工具汇总的最终结果 (始终可见)
                 if (msg.content) {
                     const finalResult = document.createElement('div');
-                    finalResult.style.marginTop = '15px';
+                    finalResult.className = 'sub-agent-result';
+                    finalResult.style.padding = '15px 20px';
                     finalResult.style.borderTop = '1px solid var(--border-color)';
-                    finalResult.style.paddingTop = '15px';
-                    finalResult.innerHTML = `<strong style="color: var(--accent-cyan); display: flex; align-items: center; gap: 8px;"><i data-lucide="sparkle" style="width: 14px; height: 14px;"></i> 最终结果:</strong><div style="margin-top: 10px;">${marked.parse(msg.content)}</div>`;
-                    content.appendChild(finalResult);
+                    finalResult.style.background = 'rgba(46, 160, 67, 0.05)';
+                    finalResult.innerHTML = `<strong style="color: #2ea043; display: flex; align-items: center; gap: 8px;"><i data-lucide="sparkle" style="width: 14px; height: 14px;"></i> 最终结果:</strong><div style="margin-top: 10px;">${marked.parse(msg.content)}</div>`;
+                    wrapper.appendChild(finalResult);
                 }
-            } else if (msg.content) {
-                // 没有内部细节的普通工具调用
-                addMessageComponent('tool', `🔧 工具执行 (${msg.name}):\n${msg.content}`, container);
+            } else {
+                // 普通工具调用
+                renderToolCall(msg, args, container);
             }
         }
     });
     lucide.createIcons();
     container.scrollTop = container.scrollHeight;
 }
+
+function renderToolCall(msg, args, container) {
+    const displayName = msg.name.replace(/^transfer_to_/, '');
+    const toolCallDiv = document.createElement('div');
+    toolCallDiv.className = 'tool-call-container';
+
+    const header = document.createElement('div');
+    header.className = 'tool-call-header';
+    header.innerHTML = `
+        <div class="tool-call-title">
+            <i data-lucide="wrench" style="width: 14px; height: 14px;"></i>
+            <span>工具执行: ${displayName}</span>
+        </div>
+        <i data-lucide="chevron-down" class="toggle-icon"></i>
+    `;
+
+    const body = document.createElement('div');
+    body.className = 'tool-call-body hidden';
+
+    header.onclick = () => {
+        body.classList.toggle('hidden');
+        toolCallDiv.classList.toggle('expanded');
+    };
+
+    // 参数部分
+    if (args) {
+        const argsSection = document.createElement('div');
+        argsSection.className = 'tool-section';
+        const argsStr = typeof args === 'string' ? args : JSON.stringify(args, null, 2);
+        argsSection.innerHTML = `
+            <div class="tool-section-label">
+                <span>输入参数</span>
+                <button class="copy-btn" onclick="copyToClipboard(this)">
+                    <i data-lucide="copy" style="width: 12px; height: 12px;"></i> 复制
+                </button>
+            </div>
+            <div class="tool-section-content">${argsStr}</div>
+        `;
+        // 为复制按钮绑定内容
+        argsSection.querySelector('.copy-btn')._copyContent = argsStr;
+        body.appendChild(argsSection);
+    }
+
+    // 结果部分
+    if (msg.content) {
+        const resultSection = document.createElement('div');
+        resultSection.className = 'tool-section';
+        resultSection.innerHTML = `
+            <div class="tool-section-label">
+                <span>执行结果</span>
+                <button class="copy-btn" onclick="copyToClipboard(this)">
+                    <i data-lucide="copy" style="width: 12px; height: 12px;"></i> 复制
+                </button>
+            </div>
+            <div class="tool-section-content">${msg.content}</div>
+        `;
+        // 为复制按钮绑定内容
+        resultSection.querySelector('.copy-btn')._copyContent = msg.content;
+        body.appendChild(resultSection);
+    }
+
+    toolCallDiv.appendChild(header);
+    toolCallDiv.appendChild(body);
+    container.appendChild(toolCallDiv);
+}
+
+function copyToClipboard(btn) {
+    let content = btn._copyContent;
+    if (!content) return;
+
+    navigator.clipboard.writeText(content).then(() => {
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="check" style="width: 12px; height: 12px;"></i> 已复制';
+        btn.classList.add('copied');
+        lucide.createIcons();
+        setTimeout(() => {
+            btn.innerHTML = originalHTML;
+            btn.classList.remove('copied');
+            lucide.createIcons();
+        }, 2000);
+    }).catch(err => {
+        console.error('复制失败: ', err);
+    });
+}
+
 
 function addMessageComponent(sender, text, container) {
     const messageDiv = document.createElement('div');
@@ -151,8 +270,10 @@ function addMessageComponent(sender, text, container) {
     if (sender === 'thought') {
         const header = document.createElement('div');
         header.className = 'thought-header';
-        header.innerHTML = '<span>🤔 思考过程</span><span class="toggle-icon">▼</span>';
-        header.onclick = () => messageDiv.classList.toggle('collapsed');
+        header.innerHTML = '<span>🤔 思考过程</span><i data-lucide="chevron-down" class="toggle-icon" style="width: 14px; height: 14px;"></i>';
+        header.onclick = () => {
+            messageDiv.classList.toggle('collapsed');
+        };
 
         const content = document.createElement('div');
         content.className = 'thought-content';
@@ -164,6 +285,7 @@ function addMessageComponent(sender, text, container) {
         if (text) {
             content.innerHTML = marked.parse(text);
         }
+        lucide.createIcons();
         return messageDiv;
     }
 
@@ -187,6 +309,7 @@ function addMessageComponent(sender, text, container) {
         messageDiv.textContent = text;
     }
     container.appendChild(messageDiv);
+    lucide.createIcons();
     return messageDiv;
 }
 

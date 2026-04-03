@@ -310,13 +310,31 @@ body {
 }
 
 .toggle-icon {
-    font-size: 9px;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
     color: var(--text-muted);
-    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: rotate(0deg) !important;
+    transform-origin: center center;
+    flex-shrink: 0;
+    cursor: pointer;
 }
 
-.message.thought.collapsed .toggle-icon {
-    transform: rotate(-180deg);
+.toggle-icon svg {
+    width: 100%;
+    height: 100%;
+    transition: inherit;
+    transform-origin: center center;
+}
+
+/* 展开状态通用逻辑 - 仅针对直接属下 Header 里的图标 */
+.message.thought:not(.collapsed) > .thought-header .toggle-icon,
+.sub-agent-wrapper.expanded > .sub-agent-header .toggle-icon,
+.tool-call-container.expanded > .tool-call-header .toggle-icon {
+    transform: rotate(180deg) !important;
 }
 
 .message.thought.collapsed .thought-content {
@@ -493,6 +511,10 @@ th {
     background: rgba(88, 166, 255, 0.05);
     color: var(--accent-cyan);
     padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
 }
 
 .sub-agent-content {
@@ -501,4 +523,98 @@ th {
 }
 .sub-agent-content.hidden {
     display: none;
+}
+
+/* Tool Call Enhancements */
+.tool-call-container {
+    margin: 12px 0;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+    max-width: 100%;
+}
+
+.tool-call-header {
+    background: rgba(88, 166, 255, 0.1);
+    padding: 8px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+}
+
+.tool-call-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-cyan);
+}
+
+.tool-call-body {
+    padding: 12px;
+    font-size: 13px;
+    transition: all 0.3s ease;
+}
+
+.tool-call-body.hidden {
+    display: none;
+}
+
+.tool-section {
+    margin-bottom: 12px;
+}
+
+.tool-section:last-child {
+    margin-bottom: 0;
+}
+
+.tool-section-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tool-section-content {
+    background: #010409;
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    position: relative;
+    max-height: 400px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.copy-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+}
+
+.copy-btn:hover {
+    color: var(--accent-cyan);
+    background: rgba(88, 166, 255, 0.1);
+}
+
+.copy-btn.copied {
+    color: #2ea043;
 }
