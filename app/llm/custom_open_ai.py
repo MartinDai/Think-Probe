@@ -31,4 +31,8 @@ class CustomChatOpenAI(ChatOpenAI):
                 if reasoning_content is not None:
                     generation_chunk.message.additional_kwargs["reasoning_content"] = reasoning_content
 
+                    if generation_chunk.generation_info is None:
+                        generation_chunk.generation_info = {}
+                    generation_chunk.generation_info["reasoning_content"] = reasoning_content
+
         return generation_chunk

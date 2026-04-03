@@ -1,8 +1,8 @@
-import asyncio
 from datetime import datetime
 
 from langchain_core.messages import BaseMessage, AIMessage, ToolMessage, SystemMessage, HumanMessage
 from langchain_core.tools import StructuredTool
+from langfuse.langchain import CallbackHandler
 from pydantic import BaseModel, Field
 
 from app.node import Agent
@@ -16,8 +16,6 @@ langfuse_public = get_env_variable("LANGFUSE_PUBLIC_KEY")
 langfuse_host = get_env_variable("LANGFUSE_BASE_URL") or get_env_variable("LANGFUSE_HOST")
 if langfuse_host and "LANGFUSE_HOST" not in os.environ:
     os.environ["LANGFUSE_HOST"] = langfuse_host
-
-
 
 
 class MaxTurnsExceeded(Exception):
@@ -94,7 +92,6 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
     callbacks = []
     run_config = None
     if langfuse_secret and langfuse_public:
-        from langfuse.langchain import CallbackHandler
         handler = CallbackHandler()
         callbacks.append(handler)
         
@@ -215,43 +212,3 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
 
     yield {"type": "error", "message": f"Agent [{agent.name}] exceeded max turns: {max_turns}"}
 
-
-async def main():
-    """Quick test of the agent loop with sub-agents"""
-    # Define a sub-agent
-    sub = Agent(
-        name="greeter",
-        instructions="You are a greeter. Respond with a warm greeting to the task given.",
-        tools=[],
-    )
-
-    # Define main agent with sub-agent
-    main_agent = Agent(
-        name="main",
-        instructions=(
-            "You are a helpful assistant. "
-            "If the user wants a greeting, delegate to the greeter sub-agent."
-        ),
-        tools=[],
-        sub_agents=[sub],
-    )
-
-    messages = [HumanMessage(content="请打个招呼")]
-
-    async for event in run_agent_stream(main_agent, messages):
-        if event["type"] == "text_delta":
-            print(event["content"], end="", flush=True)
-        elif event["type"] == "sub_agent_start":
-            print(f"\n>>> Delegating to [{event['name']}]: {event['task']}")
-        elif event["type"] == "sub_agent_end":
-            print(f"\n<<< [{event['name']}] returned: {event['result'][:100]}")
-        elif event["type"] == "final":
-            print("\n--- Done ---")
-        elif event["type"] == "step_done":
-            print()
-        else:
-            print(f"\n[Event] {event}")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
