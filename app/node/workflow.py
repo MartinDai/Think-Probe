@@ -24,7 +24,7 @@ class MaxTurnsExceeded(Exception):
 
 class SubAgentInput(BaseModel):
     """Input schema for sub-agent delegation tools"""
-    task: str = Field(description="A clear description of the task to delegate to the sub-agent")
+    task: str = Field(description="委派给子代理的清晰任务描述")
 
 
 def _create_sub_agent_tool(sub_agent: Agent) -> StructuredTool:
@@ -41,9 +41,8 @@ def _create_sub_agent_tool(sub_agent: Agent) -> StructuredTool:
     return StructuredTool(
         name=f"transfer_to_{sub_agent.name}",
         description=(
-            f"Delegate a task to the '{sub_agent.name}' sub-agent. "
-            f"You must provide a clear and complete task description. "
-            f"Sub-agent capability: {sub_agent.instructions[:200]}"
+            f"委派任务给 '{sub_agent.name}' 子代理。 "
+            f"该子代理的能力范围：{sub_agent.instructions[:200]}"
         ),
         func=_placeholder,
         args_schema=SubAgentInput,

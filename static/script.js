@@ -14,8 +14,20 @@ function updateNewSessionUI(isEmpty) {
     lucide.createIcons();
 }
 
+function getFormattedTimestamp() {
+    const now = new Date();
+    const pad = (num, len = 2) => String(num).padStart(len, '0');
+    return pad(now.getFullYear(), 4) +
+           pad(now.getMonth() + 1) +
+           pad(now.getDate()) +
+           pad(now.getHours()) +
+           pad(now.getMinutes()) +
+           pad(now.getSeconds()) +
+           pad(now.getMilliseconds(), 3);
+}
+
 function newConversation() {
-    currentConversationId = 'conv_' + Date.now();
+    currentConversationId = 'conv_' + getFormattedTimestamp();
     conversations[currentConversationId] = {
         messages: [],
         timestamp: Date.now(),
