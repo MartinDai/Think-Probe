@@ -68,3 +68,11 @@ async def create_message(conversation_id: str, request: Request):
         workflow_service.process_message(message_content, context),
         media_type="text/event-stream"
     )
+
+
+@router.post("/{conversation_id}/stop")
+async def stop_conversation(conversation_id: str):
+    """停止会话生成"""
+    from app.service import stop_service
+    stop_service.set_stop_event(conversation_id)
+    return {"status": "success"}

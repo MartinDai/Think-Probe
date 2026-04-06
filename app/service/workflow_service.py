@@ -38,100 +38,106 @@ async def process_message(message: str, context: ConversationContext):
     langfuse_client = get_client()
     trace_name = message[:50] if message else "Chat Interaction"
     
-    with langfuse_client.start_as_current_observation(name=trace_name) as trace:
-        async for event in run_agent_stream(agent, messages, session_id=conversation_id):
-            event_type = event["type"]
+    from app.service import stop_service
+    stop_event = stop_service.get_stop_event(conversation_id)
 
-            if event_type == "thought_delta":
-                response_chunk = response_util.create_chunk(
-                    conversation_id=conversation_id,
-                    reasoning_content=event["content"],
-                    role="assistant",
-                    model=MODEL_NAME,
-                )
-                yield f"data: {json.dumps(response_chunk)}\n\n"
+    try:
+        with langfuse_client.start_as_current_observation(name=trace_name) as trace:
+            async for event in run_agent_stream(agent, messages, session_id=conversation_id, stop_event=stop_event):
+                event_type = event["type"]
 
-            elif event_type == "text_delta":
-                response_chunk = response_util.create_chunk(
-                    conversation_id=conversation_id,
-                    content=event["content"],
-                    role="assistant",
-                    model=MODEL_NAME,
-                )
-                yield f"data: {json.dumps(response_chunk)}\n\n"
+                if event_type == "thought_delta":
+                    response_chunk = response_util.create_chunk(
+                        conversation_id=conversation_id,
+                        reasoning_content=event["content"],
+                        role="assistant",
+                        model=MODEL_NAME,
+                    )
+                    yield f"data: {json.dumps(response_chunk)}\n\n"
 
-            elif event_type == "tool_start":
-                logging.info(f"Tool start: {event['name']}")
-                response_chunk = response_util.create_chunk(
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    model=MODEL_NAME,
-                )
-                response_chunk["choices"][0]["delta"]["tool_start"] = {
-                    "name": event["name"],
-                    "args": event["args"]
-                }
-                yield f"data: {json.dumps(response_chunk)}\n\n"
+                elif event_type == "text_delta":
+                    response_chunk = response_util.create_chunk(
+                        conversation_id=conversation_id,
+                        content=event["content"],
+                        role="assistant",
+                        model=MODEL_NAME,
+                    )
+                    yield f"data: {json.dumps(response_chunk)}\n\n"
 
-            elif event_type == "tool_end":
-                logging.info(f"Tool end: {event['name']}")
-                response_chunk = response_util.create_chunk(
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    model=MODEL_NAME,
-                )
-                response_chunk["choices"][0]["delta"]["tool_end"] = {
-                    "name": event["name"],
-                    "result": event["result"]
-                }
-                yield f"data: {json.dumps(response_chunk)}\n\n"
+                elif event_type == "tool_start":
+                    logging.info(f"Tool start: {event['name']}")
+                    response_chunk = response_util.create_chunk(
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        model=MODEL_NAME,
+                    )
+                    response_chunk["choices"][0]["delta"]["tool_start"] = {
+                        "name": event["name"],
+                        "args": event["args"]
+                    }
+                    yield f"data: {json.dumps(response_chunk)}\n\n"
 
-            elif event_type == "sub_agent_start":
-                logging.info(f"Sub-agent start: {event['name']}")
-                response_chunk = response_util.create_chunk(
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    model=MODEL_NAME,
-                )
-                response_chunk["choices"][0]["delta"]["sub_agent_start"] = {
-                    "name": event["name"],
-                    "task": event["task"]
-                }
-                yield f"data: {json.dumps(response_chunk)}\n\n"
+                elif event_type == "tool_end":
+                    logging.info(f"Tool end: {event['name']}")
+                    response_chunk = response_util.create_chunk(
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        model=MODEL_NAME,
+                    )
+                    response_chunk["choices"][0]["delta"]["tool_end"] = {
+                        "name": event["name"],
+                        "result": event["result"]
+                    }
+                    yield f"data: {json.dumps(response_chunk)}\n\n"
 
-            elif event_type == "sub_agent_end":
-                logging.info(f"Sub-agent end: {event['name']}")
-                response_chunk = response_util.create_chunk(
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    model=MODEL_NAME,
-                )
-                response_chunk["choices"][0]["delta"]["sub_agent_end"] = {
-                    "name": event["name"],
-                    "result": event["result"]
-                }
-                yield f"data: {json.dumps(response_chunk)}\n\n"
+                elif event_type == "sub_agent_start":
+                    logging.info(f"Sub-agent start: {event['name']}")
+                    response_chunk = response_util.create_chunk(
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        model=MODEL_NAME,
+                    )
+                    response_chunk["choices"][0]["delta"]["sub_agent_start"] = {
+                        "name": event["name"],
+                        "task": event["task"]
+                    }
+                    yield f"data: {json.dumps(response_chunk)}\n\n"
 
-            elif event_type == "message_persist":
-                # Incremental JSONL persistence — write to the correct agent's file
-                conversation_service.append_message(
-                    conversation_id, event["agent"], event["message"],
-                    extra=event.get("extra"),
-                )
+                elif event_type == "sub_agent_end":
+                    logging.info(f"Sub-agent end: {event['name']}")
+                    response_chunk = response_util.create_chunk(
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        model=MODEL_NAME,
+                    )
+                    response_chunk["choices"][0]["delta"]["sub_agent_end"] = {
+                        "name": event["name"],
+                        "result": event["result"]
+                    }
+                    yield f"data: {json.dumps(response_chunk)}\n\n"
 
-            elif event_type == "step_done":
-                yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
+                elif event_type == "message_persist":
+                    # Incremental JSONL persistence — write to the correct agent's file
+                    conversation_service.append_message(
+                        conversation_id, event["agent"], event["message"],
+                        extra=event.get("extra"),
+                    )
 
-            elif event_type == "error":
-                content = f"错误: {event['message']}"
-                logging.error(content)
-                response_chunk = response_util.create_chunk(
-                    conversation_id=conversation_id,
-                    content=content,
-                    role="assistant",
-                    model=MODEL_NAME,
-                )
-                yield f"data: {json.dumps(response_chunk)}\n\n"
+                elif event_type == "step_done":
+                    yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
 
-            elif event_type == "final":
-                yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
+                elif event_type == "error":
+                    content = f"错误: {event['message']}"
+                    logging.error(content)
+                    response_chunk = response_util.create_chunk(
+                        conversation_id=conversation_id,
+                        content=content,
+                        role="assistant",
+                        model=MODEL_NAME,
+                    )
+                    yield f"data: {json.dumps(response_chunk)}\n\n"
+
+                elif event_type == "final":
+                    yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
+    finally:
+        stop_service.clear_stop_event(conversation_id)

@@ -1,5 +1,8 @@
 let currentConversationId = null;
 let conversations = {};
+let isRequestLoading = false;
+let currentAbortController = null;
+let currentLoadingIndicator = null;
 
 function updateNewSessionUI(isEmpty) {
     const container = document.getElementById('chat-container');
@@ -346,6 +349,70 @@ function addMessage(sender, text) {
     return el;
 }
 
+function setLoadingState(isLoading) {
+    isRequestLoading = isLoading;
+    const input = document.getElementById('message-input');
+    const sendBtn = document.getElementById('send-button');
+    const stopBtn = document.getElementById('stop-button');
+    const wrapper = input.parentElement;
+
+    if (isLoading) {
+        input.contentEditable = 'false';
+        sendBtn.classList.add('hidden');
+        stopBtn.classList.remove('hidden');
+        wrapper.classList.add('loading');
+    } else {
+        input.contentEditable = 'true';
+        sendBtn.classList.remove('hidden');
+        stopBtn.classList.add('hidden');
+        wrapper.classList.remove('loading');
+        // 恢复焦点
+        input.focus();
+    }
+    lucide.createIcons();
+}
+
+function showLoadingIndicator(container = null) {
+    hideLoadingIndicator();
+    const target = container || document.getElementById('messages');
+    currentLoadingIndicator = document.createElement('div');
+    currentLoadingIndicator.className = 'typing-indicator';
+    currentLoadingIndicator.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+    target.appendChild(currentLoadingIndicator);
+    target.scrollTop = target.scrollHeight;
+    
+    // 如果是在主消息区域，也确保滚动
+    if (!container) {
+        document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+    }
+}
+
+function hideLoadingIndicator() {
+    if (currentLoadingIndicator && currentLoadingIndicator.parentElement) {
+        currentLoadingIndicator.parentElement.removeChild(currentLoadingIndicator);
+    }
+    currentLoadingIndicator = null;
+}
+
+async function stopMessage() {
+    if (!currentConversationId || !isRequestLoading) return;
+    
+    // 立即释放 UI 状态
+    setLoadingState(false);
+    
+    if (currentAbortController) {
+        currentAbortController.abort();
+    }
+
+    try {
+        await fetch(`/api/conversations/${currentConversationId}/stop`, {
+            method: 'POST'
+        });
+    } catch (e) {
+        console.error("停止请求后端通知失败", e);
+    }
+}
+
 function saveMessage(role, content, reasoning_content = null) {
     if (!conversations[currentConversationId]) {
         conversations[currentConversationId] = { messages: [], timestamp: Date.now(), title: '新会话' };
@@ -357,6 +424,7 @@ function saveMessage(role, content, reasoning_content = null) {
 }
 
 async function sendMessage() {
+    if (isRequestLoading) return;
     const input = document.getElementById('message-input');
     const message = input.innerText.trim();
     if (!message) return;
@@ -371,151 +439,189 @@ async function sendMessage() {
     input.innerText = '';
     input.style.overflowY = 'hidden';
 
-    let accumulatedText = "";
+    setLoadingState(true);
+    showLoadingIndicator();
+    currentAbortController = new AbortController();
 
-    const response = await fetch(`/api/conversations/${currentConversationId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            messages: [{ role: "user", content: message }]
-        })
-    });
+    try {
+        const response = await fetch(`/api/conversations/${currentConversationId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: currentAbortController.signal,
+            body: JSON.stringify({
+                messages: [{ role: "user", content: message }]
+            })
+        });
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder('utf-8');
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
 
-    let thoughtContainer = null;
-    let accumulatedThought = "";
-    let responseContainer = null;
-    let currentAIMessageContainer = null;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
 
-    // 容器栈，用于支持嵌套渲染 (子 Agent)
-    const containerStack = [{
-        container: document.getElementById('messages'),
-        subAgentWrapper: null
-    }];
+        let thoughtContainer = null;
+        let accumulatedThought = "";
+        let accumulatedText = "";
+        let responseContainer = null;
+        let currentAIMessageContainer = null;
 
-    while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+        // 容器栈，用于支持嵌套渲染 (子 Agent)
+        const containerStack = [{
+            container: document.getElementById('messages'),
+            subAgentWrapper: null
+        }];
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
 
-        for (const line of lines) {
-            if (line.startsWith('data: ')) {
-                try {
-                    const jsonData = JSON.parse(line.substring(6));
-                    const currentLevel = containerStack[containerStack.length - 1];
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
 
-                    if (jsonData.object === 'chat.completion.step.done') {
-                        if (accumulatedText || accumulatedThought) {
-                            saveMessage('assistant', accumulatedText, accumulatedThought);
-                        }
-                        accumulatedText = "";
-                        accumulatedThought = "";
-                        responseContainer = null;
-                        thoughtContainer = null;
-                        currentAIMessageContainer = null;
-                    } else if (jsonData.choices && jsonData.choices[0].delta) {
-                        const delta = jsonData.choices[0].delta;
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const jsonData = JSON.parse(line.substring(6));
+                        const currentLevel = containerStack[containerStack.length - 1];
 
-                        // 1. 处理结构化事件 (子 Agent 开始/结束，工具开始/结束)
-                        if (delta.sub_agent_start) {
-                            const { wrapper, content } = createSubAgentWrapper(delta.sub_agent_start.name, delta.sub_agent_start.task, currentLevel.container);
-                            containerStack.push({
-                                container: content,
-                                subAgentWrapper: wrapper
-                            });
-                            currentAIMessageContainer = null; // 为子 Agent 开启新的消息块
-                            continue;
-                        }
-
-                        if (delta.sub_agent_end) {
-                            const last = containerStack.pop();
-                            if (last.subAgentWrapper && delta.sub_agent_end.result) {
-                                renderSubAgentResult(last.subAgentWrapper, delta.sub_agent_end.result);
+                        if (jsonData.object === 'chat.completion.step.done') {
+                            if (accumulatedText || accumulatedThought) {
+                                saveMessage('assistant', accumulatedText, accumulatedThought);
                             }
+                            accumulatedText = "";
+                            accumulatedThought = "";
+                            responseContainer = null;
+                            thoughtContainer = null;
                             currentAIMessageContainer = null;
-                            continue;
-                        }
+                        } else if (jsonData.choices && jsonData.choices[0].delta) {
+                            const delta = jsonData.choices[0].delta;
 
-                        if (delta.tool_start) {
-                            // 暂存工具调用信息，等 tool_end 一并渲染
-                            currentLevel._pendingTool = delta.tool_start;
-                            continue;
-                        }
-
-                        if (delta.tool_end) {
-                            const toolStart = currentLevel._pendingTool || { name: delta.tool_end.name };
-                            renderToolCall({ name: toolStart.name, result: delta.tool_end.result }, toolStart.args, currentLevel.container);
-                            currentLevel._pendingTool = null;
-                            continue;
-                        }
-
-                        // 2. 处理流式内容 (思考和正文)
-                        if (!currentAIMessageContainer && (delta.reasoning_content || delta.content)) {
-                            currentAIMessageContainer = addMessageComponent('assistant', '', currentLevel.container);
-                        }
-
-                        // 处理思考过程
-                        if (delta.reasoning_content) {
-                            if (!thoughtContainer) {
-                                thoughtContainer = addMessageComponent('thought', '', currentAIMessageContainer);
+                            // 1. 处理结构化事件 (子 Agent 开始/结束，工具开始/结束)
+                            if (delta.sub_agent_start) {
+                                // 移除外层 Loading，显示在子 Agent 内部
+                                hideLoadingIndicator();
+                                const { wrapper, content } = createSubAgentWrapper(delta.sub_agent_start.name, delta.sub_agent_start.task, currentLevel.container);
+                                containerStack.push({
+                                    container: content,
+                                    subAgentWrapper: wrapper
+                                });
+                                showLoadingIndicator(content);
+                                currentAIMessageContainer = null; // 为子 Agent 开启新的消息块
+                                continue;
                             }
-                            accumulatedThought += delta.reasoning_content;
-                            const contentArea = thoughtContainer.querySelector('.thought-content');
-                            contentArea.innerHTML = marked.parse(accumulatedThought);
+
+                            if (delta.sub_agent_end) {
+                                const last = containerStack.pop();
+                                const currentLevel = containerStack[containerStack.length - 1];
+                                if (last.subAgentWrapper) {
+                                    if (delta.sub_agent_end.result) {
+                                        renderSubAgentResult(last.subAgentWrapper, delta.sub_agent_end.result);
+                                    }
+                                    // 自动收起
+                                    last.subAgentWrapper.classList.remove('expanded');
+                                    last.container.classList.add('hidden');
+                                }
+                                // 返回外层，继续显示 Loading
+                                showLoadingIndicator(currentLevel.container);
+                                currentAIMessageContainer = null;
+                                continue;
+                            }
+
+                            if (delta.tool_start) {
+                                hideLoadingIndicator();
+                                // 暂存工具调用信息，等 tool_end 一并渲染
+                                currentLevel._pendingTool = delta.tool_start;
+                                continue;
+                            }
+
+                            if (delta.tool_end) {
+                                const toolStart = currentLevel._pendingTool || { name: delta.tool_end.name };
+                                renderToolCall({ name: toolStart.name, result: delta.tool_end.result }, toolStart.args, currentLevel.container);
+                                currentLevel._pendingTool = null;
+                                
+                                // 工具执行完，AI 继续思考，显示 Loading
+                                showLoadingIndicator(currentLevel.container);
+                                continue;
+                            }
+
+                            // 2. 处理流式内容 (思考和正文)
+                            if (!currentAIMessageContainer && (delta.reasoning_content || delta.content)) {
+                                hideLoadingIndicator();
+                                currentAIMessageContainer = addMessageComponent('assistant', '', currentLevel.container);
+                            }
+
+                            // 处理思考过程
+                            if (delta.reasoning_content) {
+                                if (!thoughtContainer) {
+                                    thoughtContainer = addMessageComponent('thought', '', currentAIMessageContainer);
+                                }
+                                accumulatedThought += delta.reasoning_content;
+                                const contentArea = thoughtContainer.querySelector('.thought-content');
+                                contentArea.innerHTML = marked.parse(accumulatedThought);
+                                document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+                            }
+
+                            // 处理正式回复内容
+                            if (delta.content) {
+                                if (thoughtContainer && !thoughtContainer.classList.contains('collapsed')) {
+                                    thoughtContainer.classList.add('collapsed');
+                                }
+                                if (!responseContainer) {
+                                    responseContainer = currentAIMessageContainer.querySelector('.content-area') ||
+                                        document.createElement('div');
+                                    if (!responseContainer.classList.contains('content-area')) {
+                                        responseContainer.className = 'content-area';
+                                        currentAIMessageContainer.appendChild(responseContainer);
+                                    }
+                                    accumulatedText = "";
+                                }
+                                accumulatedText += delta.content;
+                                responseContainer.innerHTML = marked.parse(accumulatedText);
+                            }
+
+                            // 统一滚动到底部
                             document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
                         }
-
-                        // 处理正式回复内容
-                        if (delta.content) {
-                            if (thoughtContainer && !thoughtContainer.classList.contains('collapsed')) {
-                                thoughtContainer.classList.add('collapsed');
-                            }
-                            if (!responseContainer) {
-                                responseContainer = currentAIMessageContainer.querySelector('.content-area') ||
-                                    document.createElement('div');
-                                if (!responseContainer.classList.contains('content-area')) {
-                                    responseContainer.className = 'content-area';
-                                    currentAIMessageContainer.appendChild(responseContainer);
-                                }
-                                accumulatedText = "";
-                            }
-                            accumulatedText += delta.content;
-                            responseContainer.innerHTML = marked.parse(accumulatedText);
-                        }
-
-                        // 统一滚动到底部
-                        document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+                    } catch (e) {
+                        console.error("JSON parse error:", e);
                     }
-                } catch (e) {
-                    console.error("JSON parse error:", e);
                 }
             }
         }
+
+        if (accumulatedText || accumulatedThought) {
+            saveMessage('assistant', accumulatedText, accumulatedThought);
+        }
+
+        if (!conversations[currentConversationId].title || conversations[currentConversationId].title === '新会话') {
+            const newTitle = message.substring(0, 30).trim() + (message.length > 30 ? '...' : '');
+            conversations[currentConversationId].title = newTitle;
+            document.getElementById('conversation-title').textContent = newTitle;
+
+            // 异步同步到后端，不需要等待
+            fetch(`/api/conversations/${currentConversationId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: newTitle })
+            }).catch(err => console.error("自动更新标题同步失败", err));
+        }
+
+        // 当一次交互完成时，重新全量加载该对话获取准确的嵌套 Timeline
+        await loadConversation(currentConversationId);
+
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            console.log("用户请求停止生成");
+        } else {
+            console.error("发送消息失败:", err);
+            addMessage('assistant', `❌ 发送错误: ${err.message}`);
+        }
+    } finally {
+        setLoadingState(false);
+        hideLoadingIndicator();
+        currentAbortController = null;
     }
-
-    if (accumulatedText || accumulatedThought) {
-        saveMessage('assistant', accumulatedText, accumulatedThought);
-    }
-
-    if (!conversations[currentConversationId].title || conversations[currentConversationId].title === '新会话') {
-        const newTitle = message.substring(0, 30).trim() + (message.length > 30 ? '...' : '');
-        conversations[currentConversationId].title = newTitle;
-        document.getElementById('conversation-title').textContent = newTitle;
-
-        // 异步同步到后端，不需要等待
-        fetch(`/api/conversations/${currentConversationId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: newTitle })
-        }).catch(err => console.error("自动更新标题同步失败", err));
-    }
-
-    // 当一次交互完成时，重新全量加载该对话获取准确的嵌套 Timeline
-    await loadConversation(currentConversationId);
 }
 
 async function deleteConversation(convId) {

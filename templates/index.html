@@ -39,6 +39,9 @@
                 <div class="input-area">
                     <div class="input-wrapper">
                         <div id="message-input" contenteditable="true" placeholder="请输入您的问题" onkeydown="handleEnter(event)"></div>
+                        <button onclick="stopMessage()" id="stop-button" class="hidden">
+                            <i data-lucide="square" style="fill: currentColor;"></i>
+                        </button>
                         <button onclick="sendMessage()" id="send-button">
                             <i data-lucide="arrow-up"></i>
                         </button>

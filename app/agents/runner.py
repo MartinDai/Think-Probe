@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 import os
 from typing import List, Dict, Any, AsyncGenerator
@@ -49,7 +50,8 @@ async def run_agent_stream(
     messages: List[BaseMessage], 
     max_turns: int = 10, 
     persist_key: str = None, 
-    session_id: str = None
+    session_id: str = None,
+    stop_event: asyncio.Event = None
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Core agent loop - Multi-agent collaboration with tool calling support.
@@ -84,6 +86,10 @@ async def run_agent_stream(
 
     turn = 0
     while turn < max_turns:
+        if stop_event and stop_event.is_set():
+            logger.info(f"Agent [{agent.name}] received stop signal")
+            return
+
         turn += 1
         logger.info(f"Agent [{agent.name}] turn {turn}/{max_turns}")
 
@@ -98,6 +104,14 @@ async def run_agent_stream(
             # Check for thinking process (reasoning_content)
             if hasattr(chunk, "additional_kwargs") and "reasoning_content" in chunk.additional_kwargs:
                 yield {"type": "thought_delta", "content": chunk.additional_kwargs["reasoning_content"]}
+
+            if stop_event and stop_event.is_set():
+                logger.info(f"Agent [{agent.name}] received stop signal during LLM streaming")
+                # Persist what we have so far
+                if full_response:
+                    messages.append(full_response)
+                    yield {"type": "message_persist", "agent": _persist_key, "message": full_response}
+                return
 
             if chunk.content:
                 yield {"type": "text_delta", "content": chunk.content}
@@ -136,7 +150,7 @@ async def run_agent_stream(
                 sub_messages = [HumanMessage(content=task)]
                 yield {"type": "message_persist", "agent": sub_persist_key, "message": sub_messages[0]}
                 
-                async for event in run_agent_stream(sub_agent, sub_messages, max_turns, persist_key=sub_persist_key, session_id=session_id):
+                async for event in run_agent_stream(sub_agent, sub_messages, max_turns, persist_key=sub_persist_key, session_id=session_id, stop_event=stop_event):
                     yield event
 
                 # Extract sub-agent result
