@@ -130,40 +130,14 @@ function renderMessagesList(messages, container) {
             const displayName = msg.name.replace(/^transfer_to_/, '');
 
             if (msg.sub_agent_messages && msg.sub_agent_messages.length > 0) {
-                // 渲染可折叠的子 Agent 调用时间轴
-                const wrapper = document.createElement('div');
-                wrapper.className = 'sub-agent-wrapper';
-
-                const header = document.createElement('div');
-                header.className = 'sub-agent-header';
-                header.innerHTML = `<div style="display: flex; align-items: center; gap: 8px;"><i data-lucide="cpu" style="width: 16px; height: 16px;"></i><span>子 Agent: ${displayName}</span></div><i data-lucide="chevron-down" class="toggle-icon" style="width: 16px; height: 16px;"></i>`;
-
-                const content = document.createElement('div');
-                content.className = 'sub-agent-content hidden';
-
-                header.onclick = () => {
-                    content.classList.toggle('hidden');
-                    wrapper.classList.toggle('expanded');
-                };
-
-                wrapper.appendChild(header);
-                wrapper.appendChild(content);
-                container.appendChild(wrapper);
-
-                // 提取任务描述并将参数显示在头部下方
-                if (args) {
-                    const task = typeof args === 'object' ? args.task : null;
+                const { wrapper, content } = createSubAgentWrapper(displayName, args ? (typeof args === 'object' ? args.task : null) : null, container, false);
+                if (args && !args.task) {
                     const argDiv = document.createElement('div');
                     argDiv.style.padding = '12px 20px';
                     argDiv.style.fontSize = '13px';
                     argDiv.style.borderBottom = '1px solid var(--border-color)';
                     argDiv.style.background = 'rgba(88, 166, 255, 0.03)';
-
-                    if (task) {
-                        argDiv.innerHTML = `<div style="color: var(--text-primary); font-weight: 500; margin-bottom: 4px;">🚀 任务:</div><div style="color: var(--text-muted); line-height: 1.5;">${task}</div>`;
-                    } else {
-                        argDiv.innerHTML = `<strong>参数:</strong> <code style="background: rgba(0,0,0,0.2); padding: 2px 4px;">${typeof args === 'string' ? args : JSON.stringify(args)}</code>`;
-                    }
+                    argDiv.innerHTML = `<strong>参数:</strong> <code style="background: rgba(0,0,0,0.2); padding: 2px 4px;">${typeof args === 'string' ? args : JSON.stringify(args)}</code>`;
                     wrapper.insertBefore(argDiv, content);
                 }
 
@@ -172,13 +146,7 @@ function renderMessagesList(messages, container) {
 
                 // 最后显示工具汇总的最终结果 (始终可见)
                 if (msg.content) {
-                    const finalResult = document.createElement('div');
-                    finalResult.className = 'sub-agent-result';
-                    finalResult.style.padding = '15px 20px';
-                    finalResult.style.borderTop = '1px solid var(--border-color)';
-                    finalResult.style.background = 'rgba(46, 160, 67, 0.05)';
-                    finalResult.innerHTML = `<strong style="color: #2ea043; display: flex; align-items: center; gap: 8px;"><i data-lucide="sparkle" style="width: 14px; height: 14px;"></i> 最终结果:</strong><div style="margin-top: 10px;">${marked.parse(msg.content)}</div>`;
-                    wrapper.appendChild(finalResult);
+                    renderSubAgentResult(wrapper, msg.content);
                 }
             } else {
                 // 普通工具调用
@@ -190,10 +158,55 @@ function renderMessagesList(messages, container) {
     container.scrollTop = container.scrollHeight;
 }
 
-function renderToolCall(msg, args, container) {
-    const displayName = msg.name.replace(/^transfer_to_/, '');
+function createSubAgentWrapper(displayName, task, container, expanded = true) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'sub-agent-wrapper' + (expanded ? ' expanded' : '');
+
+    const header = document.createElement('div');
+    header.className = 'sub-agent-header';
+    header.innerHTML = `<div style="display: flex; align-items: center; gap: 8px;"><i data-lucide="cpu" style="width: 16px; height: 16px;"></i><span>子 Agent: ${displayName}</span></div><i data-lucide="chevron-down" class="toggle-icon" style="width: 16px; height: 16px;"></i>`;
+
+    const content = document.createElement('div');
+    content.className = 'sub-agent-content' + (expanded ? '' : ' hidden');
+
+    header.onclick = () => {
+        content.classList.toggle('hidden');
+        wrapper.classList.toggle('expanded');
+    };
+
+    wrapper.appendChild(header);
+    wrapper.appendChild(content);
+    container.appendChild(wrapper);
+
+    if (task) {
+        const argDiv = document.createElement('div');
+        argDiv.style.padding = '12px 20px';
+        argDiv.style.fontSize = '13px';
+        argDiv.style.borderBottom = '1px solid var(--border-color)';
+        argDiv.style.background = 'rgba(88, 166, 255, 0.03)';
+        argDiv.innerHTML = `<div style="color: var(--text-primary); font-weight: 500; margin-bottom: 4px;">🚀 任务:</div><div style="color: var(--text-muted); line-height: 1.5;">${task}</div>`;
+        wrapper.insertBefore(argDiv, content);
+    }
+
+    lucide.createIcons();
+    return { wrapper, content };
+}
+
+function renderSubAgentResult(wrapper, content) {
+    const finalResult = document.createElement('div');
+    finalResult.className = 'sub-agent-result';
+    finalResult.style.padding = '15px 20px';
+    finalResult.style.borderTop = '1px solid var(--border-color)';
+    finalResult.style.background = 'rgba(46, 160, 67, 0.05)';
+    finalResult.innerHTML = `<strong style="color: #2ea043; display: flex; align-items: center; gap: 8px;"><i data-lucide="sparkle" style="width: 14px; height: 14px;"></i> 最终结果:</strong><div style="margin-top: 10px;">${marked.parse(content)}</div>`;
+    wrapper.appendChild(finalResult);
+    lucide.createIcons();
+}
+
+function renderToolCall(msg, args, container, expanded = false) {
+    const displayName = (msg.name || msg.type).replace(/^transfer_to_/, '');
     const toolCallDiv = document.createElement('div');
-    toolCallDiv.className = 'tool-call-container';
+    toolCallDiv.className = 'tool-call-container' + (expanded ? ' expanded' : '');
 
     const header = document.createElement('div');
     header.className = 'tool-call-header';
@@ -206,7 +219,7 @@ function renderToolCall(msg, args, container) {
     `;
 
     const body = document.createElement('div');
-    body.className = 'tool-call-body hidden';
+    body.className = 'tool-call-body' + (expanded ? '' : ' hidden');
 
     header.onclick = () => {
         body.classList.toggle('hidden');
@@ -227,15 +240,15 @@ function renderToolCall(msg, args, container) {
             </div>
             <div class="tool-section-content">${argsStr}</div>
         `;
-        // 为复制按钮绑定内容
         argsSection.querySelector('.copy-btn')._copyContent = argsStr;
         body.appendChild(argsSection);
     }
 
     // 结果部分
-    if (msg.content) {
+    if (msg.content || msg.result) {
         const resultSection = document.createElement('div');
         resultSection.className = 'tool-section';
+        const resultContent = msg.content || msg.result;
         resultSection.innerHTML = `
             <div class="tool-section-label">
                 <span>执行结果</span>
@@ -243,16 +256,16 @@ function renderToolCall(msg, args, container) {
                     <i data-lucide="copy" style="width: 12px; height: 12px;"></i> 复制
                 </button>
             </div>
-            <div class="tool-section-content">${msg.content}</div>
+            <div class="tool-section-content">${resultContent}</div>
         `;
-        // 为复制按钮绑定内容
-        resultSection.querySelector('.copy-btn')._copyContent = msg.content;
+        resultSection.querySelector('.copy-btn')._copyContent = resultContent;
         body.appendChild(resultSection);
     }
 
     toolCallDiv.appendChild(header);
     toolCallDiv.appendChild(body);
     container.appendChild(toolCallDiv);
+    lucide.createIcons();
 }
 
 function copyToClipboard(btn) {
@@ -358,9 +371,7 @@ async function sendMessage() {
     input.innerText = '';
     input.style.overflowY = 'hidden';
 
-    let currentAIMessageContainer = null;
     let accumulatedText = "";
-    let forceNewMessageDiv = true;
 
     const response = await fetch(`/api/conversations/${currentConversationId}/messages`, {
         method: 'POST',
@@ -376,6 +387,13 @@ async function sendMessage() {
     let thoughtContainer = null;
     let accumulatedThought = "";
     let responseContainer = null;
+    let currentAIMessageContainer = null;
+
+    // 容器栈，用于支持嵌套渲染 (子 Agent)
+    const containerStack = [{
+        container: document.getElementById('messages'),
+        subAgentWrapper: null
+    }];
 
     while (true) {
         const { value, done } = await reader.read();
@@ -388,11 +406,12 @@ async function sendMessage() {
             if (line.startsWith('data: ')) {
                 try {
                     const jsonData = JSON.parse(line.substring(6));
+                    const currentLevel = containerStack[containerStack.length - 1];
+
                     if (jsonData.object === 'chat.completion.step.done') {
                         if (accumulatedText || accumulatedThought) {
                             saveMessage('assistant', accumulatedText, accumulatedThought);
                         }
-                        forceNewMessageDiv = true;
                         accumulatedText = "";
                         accumulatedThought = "";
                         responseContainer = null;
@@ -401,9 +420,42 @@ async function sendMessage() {
                     } else if (jsonData.choices && jsonData.choices[0].delta) {
                         const delta = jsonData.choices[0].delta;
 
-                        // 所有的回复流公用同一个大的 AI 容器
+                        // 1. 处理结构化事件 (子 Agent 开始/结束，工具开始/结束)
+                        if (delta.sub_agent_start) {
+                            const { wrapper, content } = createSubAgentWrapper(delta.sub_agent_start.name, delta.sub_agent_start.task, currentLevel.container);
+                            containerStack.push({
+                                container: content,
+                                subAgentWrapper: wrapper
+                            });
+                            currentAIMessageContainer = null; // 为子 Agent 开启新的消息块
+                            continue;
+                        }
+
+                        if (delta.sub_agent_end) {
+                            const last = containerStack.pop();
+                            if (last.subAgentWrapper && delta.sub_agent_end.result) {
+                                renderSubAgentResult(last.subAgentWrapper, delta.sub_agent_end.result);
+                            }
+                            currentAIMessageContainer = null;
+                            continue;
+                        }
+
+                        if (delta.tool_start) {
+                            // 暂存工具调用信息，等 tool_end 一并渲染
+                            currentLevel._pendingTool = delta.tool_start;
+                            continue;
+                        }
+
+                        if (delta.tool_end) {
+                            const toolStart = currentLevel._pendingTool || { name: delta.tool_end.name };
+                            renderToolCall({ name: toolStart.name, result: delta.tool_end.result }, toolStart.args, currentLevel.container);
+                            currentLevel._pendingTool = null;
+                            continue;
+                        }
+
+                        // 2. 处理流式内容 (思考和正文)
                         if (!currentAIMessageContainer && (delta.reasoning_content || delta.content)) {
-                            currentAIMessageContainer = addMessageComponent('assistant', '', document.getElementById('messages'));
+                            currentAIMessageContainer = addMessageComponent('assistant', '', currentLevel.container);
                         }
 
                         // 处理思考过程
@@ -419,12 +471,10 @@ async function sendMessage() {
 
                         // 处理正式回复内容
                         if (delta.content) {
-                            // 刚开始输出正式内容时，说明思考过程结束了，折叠它
                             if (thoughtContainer && !thoughtContainer.classList.contains('collapsed')) {
                                 thoughtContainer.classList.add('collapsed');
                             }
                             if (!responseContainer) {
-                                // 在 AI 容器中查找或创建 content-area
                                 responseContainer = currentAIMessageContainer.querySelector('.content-area') ||
                                     document.createElement('div');
                                 if (!responseContainer.classList.contains('content-area')) {
@@ -435,8 +485,10 @@ async function sendMessage() {
                             }
                             accumulatedText += delta.content;
                             responseContainer.innerHTML = marked.parse(accumulatedText);
-                            forceNewMessageDiv = false;
                         }
+
+                        // 统一滚动到底部
+                        document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
                     }
                 } catch (e) {
                     console.error("JSON parse error:", e);
@@ -445,7 +497,7 @@ async function sendMessage() {
         }
     }
 
-    if ((accumulatedText || accumulatedThought) && !forceNewMessageDiv) {
+    if (accumulatedText || accumulatedThought) {
         saveMessage('assistant', accumulatedText, accumulatedThought);
     }
 

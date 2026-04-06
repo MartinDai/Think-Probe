@@ -61,50 +61,56 @@ async def process_message(message: str, context: ConversationContext):
                 yield f"data: {json.dumps(response_chunk)}\n\n"
 
             elif event_type == "tool_start":
-                content = f"执行工具调用: {event['name']} 输入:\n{json.dumps(event['args'], ensure_ascii=False, indent=2)}"
-                logging.info(content)
+                logging.info(f"Tool start: {event['name']}")
                 response_chunk = response_util.create_chunk(
                     conversation_id=conversation_id,
-                    content=content,
                     role="assistant",
                     model=MODEL_NAME,
                 )
+                response_chunk["choices"][0]["delta"]["tool_start"] = {
+                    "name": event["name"],
+                    "args": event["args"]
+                }
                 yield f"data: {json.dumps(response_chunk)}\n\n"
 
             elif event_type == "tool_end":
-                content = f"工具执行完成: {event['name']} 输出:\n{event['result']}"
-                logging.info(content)
+                logging.info(f"Tool end: {event['name']}")
                 response_chunk = response_util.create_chunk(
                     conversation_id=conversation_id,
-                    content=content,
                     role="assistant",
                     model=MODEL_NAME,
                 )
+                response_chunk["choices"][0]["delta"]["tool_end"] = {
+                    "name": event["name"],
+                    "result": event["result"]
+                }
                 yield f"data: {json.dumps(response_chunk)}\n\n"
 
             elif event_type == "sub_agent_start":
-                content = f"🤖 委派任务到 [{event['name']}] agent: {event['task']}"
-                logging.info(content)
+                logging.info(f"Sub-agent start: {event['name']}")
                 response_chunk = response_util.create_chunk(
                     conversation_id=conversation_id,
-                    content=content,
                     role="assistant",
                     model=MODEL_NAME,
                 )
+                response_chunk["choices"][0]["delta"]["sub_agent_start"] = {
+                    "name": event["name"],
+                    "task": event["task"]
+                }
                 yield f"data: {json.dumps(response_chunk)}\n\n"
-                yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
 
             elif event_type == "sub_agent_end":
-                content = f"✅ [{event['name']}] agent 执行完成"
-                logging.info(content)
+                logging.info(f"Sub-agent end: {event['name']}")
                 response_chunk = response_util.create_chunk(
                     conversation_id=conversation_id,
-                    content=content,
                     role="assistant",
                     model=MODEL_NAME,
                 )
+                response_chunk["choices"][0]["delta"]["sub_agent_end"] = {
+                    "name": event["name"],
+                    "result": event["result"]
+                }
                 yield f"data: {json.dumps(response_chunk)}\n\n"
-                yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
 
             elif event_type == "message_persist":
                 # Incremental JSONL persistence — write to the correct agent's file
