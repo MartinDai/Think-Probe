@@ -1,4 +1,4 @@
-from app.node import Agent
+from app.agents.base import Agent
 
 orchestrator_agent = Agent(
     name="orchestrator",

@@ -1,16 +1,19 @@
 from datetime import datetime
+import os
+from typing import List, Dict, Any, AsyncGenerator
 
 from langchain_core.messages import BaseMessage, AIMessage, ToolMessage, SystemMessage, HumanMessage
 from langchain_core.tools import StructuredTool
 from langfuse.langchain import CallbackHandler
-from pydantic import BaseModel, Field
 
-from app.node import Agent
-from app.model import DEFAULT_MODEL
+from app.agents.base import Agent
+from app.core.llm import DEFAULT_MODEL
+from app.schemas.agent import SubAgentInput
 from app.utils.logger import logger
 from app.config.env_config import get_env_variable
-import os
 
+
+# Langfuse configuration
 langfuse_secret = get_env_variable("LANGFUSE_SECRET_KEY")
 langfuse_public = get_env_variable("LANGFUSE_PUBLIC_KEY")
 langfuse_host = get_env_variable("LANGFUSE_BASE_URL") or get_env_variable("LANGFUSE_HOST")
@@ -19,22 +22,14 @@ if langfuse_host and "LANGFUSE_HOST" not in os.environ:
 
 
 class MaxTurnsExceeded(Exception):
+    """Raised when an agent loop exceeds the maximum number of turns."""
     pass
-
-
-class SubAgentInput(BaseModel):
-    """Input schema for sub-agent delegation tools"""
-    task: str = Field(description="委派给子代理的清晰任务描述")
 
 
 def _create_sub_agent_tool(sub_agent: Agent) -> StructuredTool:
     """
-    Create a tool definition that represents delegating a task to a sub-agent.
-
-    The tool function itself is a placeholder — actual sub-agent execution
-    is handled in the agent loop when this tool is called.
+    Create a tool definition for delegating tasks to a sub-agent.
     """
-
     def _placeholder(task: str) -> str:
         return ""
 
@@ -49,32 +44,17 @@ def _create_sub_agent_tool(sub_agent: Agent) -> StructuredTool:
     )
 
 
-async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns: int = 10, persist_key: str = None, session_id: str = None):
+async def run_agent_stream(
+    agent: Agent, 
+    messages: List[BaseMessage], 
+    max_turns: int = 10, 
+    persist_key: str = None, 
+    session_id: str = None
+) -> AsyncGenerator[Dict[str, Any], None]:
     """
-    Core agent loop - OpenAI Agents SDK (OpenClaw) style.
-
-    The loop:
-        1. Call LLM (with tools + sub-agent tools bound)
-        2. If response has tool_calls:
-           - If it's a sub-agent call → run sub-agent loop recursively, return result
-           - If it's a regular tool → execute tool
-           - Continue loop
-        3. If response has no tool_calls → final output → end loop
-
-    Yields structured events:
-        - {"type": "text_delta", "content": "..."}
-        - {"type": "tool_start", "name": "...", "args": {...}}
-        - {"type": "tool_end", "name": "...", "result": "..."}
-        - {"type": "sub_agent_start", "name": "...", "task": "..."}
-        - {"type": "sub_agent_end", "name": "...", "result": "..."}
-        - {"type": "message_persist", "agent": "...", "message": BaseMessage}
-        - {"type": "step_done"}
-        - {"type": "final"}
-        - {"type": "error", "message": "..."}
+    Core agent loop - Multi-agent collaboration with tool calling support.
     """
-    # persist_key determines which JSONL file to write to
     _persist_key = persist_key or agent.name
-
     system_message = SystemMessage(content=agent.instructions)
 
     # Build sub-agent map and tools
@@ -115,7 +95,7 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
             else:
                 full_response = full_response + chunk
 
-            # Check for reasoning_content (thinking process)
+            # Check for thinking process (reasoning_content)
             if hasattr(chunk, "additional_kwargs") and "reasoning_content" in chunk.additional_kwargs:
                 yield {"type": "thought_delta", "content": chunk.additional_kwargs["reasoning_content"]}
 
@@ -129,7 +109,7 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
         messages.append(full_response)
         yield {"type": "message_persist", "agent": _persist_key, "message": full_response}
 
-        # 2. No tool calls → final output, end loop
+        # 2. End loop if no tool calls
         if not full_response.tool_calls:
             yield {"type": "final"}
             return
@@ -150,17 +130,16 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
 
                 yield {"type": "sub_agent_start", "name": sub_agent.name, "task": task}
 
-                # Each sub-agent invocation gets a unique file: {name}_{timestamp}.jsonl
                 sub_persist_key = f"{sub_agent.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-                # Run sub-agent loop with its own message context
+                # Run sub-agent loop with its own context
                 sub_messages = [HumanMessage(content=task)]
-                # Persist sub-agent's input message
                 yield {"type": "message_persist", "agent": sub_persist_key, "message": sub_messages[0]}
+                
                 async for event in run_agent_stream(sub_agent, sub_messages, max_turns, persist_key=sub_persist_key, session_id=session_id):
-                    yield event  # Forward sub-agent events to caller
+                    yield event
 
-                # Extract the sub-agent's final response
+                # Extract sub-agent result
                 last_ai = next(
                     (m for m in reversed(sub_messages) if isinstance(m, AIMessage)),
                     None,
@@ -210,4 +189,3 @@ async def run_agent_stream(agent: Agent, messages: list[BaseMessage], max_turns:
         yield {"type": "step_done"}
 
     yield {"type": "error", "message": f"Agent [{agent.name}] exceeded max turns: {max_turns}"}
-

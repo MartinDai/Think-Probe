@@ -5,11 +5,11 @@ from langchain_core.messages import HumanMessage
 from langfuse import get_client
 
 from app.context.conversation_context import ConversationContext
-from app.model import MODEL_NAME
-from app.node import Agent
-from app.node.workflow import run_agent_stream
-from app.node.orchestrator_agent import orchestrator_agent
-from app.node.java_expert_agent import java_expert_agent
+from app.core.llm import MODEL_NAME
+from app.agents.base import Agent
+from app.agents.runner import run_agent_stream
+from app.agents.orchestrator import orchestrator_agent
+from app.agents.java_expert import java_expert_agent
 from app.service import conversation_service
 from app.utils import response_util
 

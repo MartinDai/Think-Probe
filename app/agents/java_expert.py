@@ -1,5 +1,5 @@
-from app.node import Agent
-from app.tools.get_source_code_tool import get_source_code_tool
+from app.agents.base import Agent
+from app.tools.source_code import get_source_code_tool
 
 java_expert_agent = Agent(
     name="java_expert",
