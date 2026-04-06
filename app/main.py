@@ -20,6 +20,6 @@ async def get_chat_page(request: Request):
 
 
 # 注册路由
-from app.api.chat_completions import chat_completions_router
+from app.api.conversations import router as conversations_router
 
-app.include_router(chat_completions_router)
+app.include_router(conversations_router)

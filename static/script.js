@@ -18,12 +18,12 @@ function getFormattedTimestamp() {
     const now = new Date();
     const pad = (num, len = 2) => String(num).padStart(len, '0');
     return pad(now.getFullYear(), 4) +
-           pad(now.getMonth() + 1) +
-           pad(now.getDate()) +
-           pad(now.getHours()) +
-           pad(now.getMinutes()) +
-           pad(now.getSeconds()) +
-           pad(now.getMilliseconds(), 3);
+        pad(now.getMonth() + 1) +
+        pad(now.getDate()) +
+        pad(now.getHours()) +
+        pad(now.getMinutes()) +
+        pad(now.getSeconds()) +
+        pad(now.getMilliseconds(), 3);
 }
 
 function newConversation() {
@@ -46,7 +46,7 @@ async function editConversationTitle() {
     const newTitle = prompt('请输入新的会话标题:', currentTitle);
     if (newTitle && newTitle.trim()) {
         try {
-            const response = await fetch(`/v1/conversation/${currentConversationId}/title`, {
+            const response = await fetch(`/api/conversations/${currentConversationId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ title: newTitle.trim() })
@@ -68,7 +68,7 @@ async function loadConversation(convId) {
 
     // 尝试从后端加载完整的带有子agent嵌套的时间轴记录
     try {
-        const response = await fetch(`/v1/conversation/${convId}/timeline`);
+        const response = await fetch(`/api/conversations/${convId}`);
         if (response.ok) {
             const data = await response.json();
             if (data.messages) {
@@ -92,7 +92,7 @@ async function loadConversation(convId) {
     renderMessagesList(conversation?.messages || [], messagesDiv);
     updateNewSessionUI(!(conversation?.messages?.length > 0));
     updateConversationList();
-    
+
     // 增加一个微小延时，确保 Markdown 和图标解析完成后的实际高度被计算
     setTimeout(() => {
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
@@ -158,7 +158,7 @@ function renderMessagesList(messages, container) {
                     argDiv.style.fontSize = '13px';
                     argDiv.style.borderBottom = '1px solid var(--border-color)';
                     argDiv.style.background = 'rgba(88, 166, 255, 0.03)';
-                    
+
                     if (task) {
                         argDiv.innerHTML = `<div style="color: var(--text-primary); font-weight: 500; margin-bottom: 4px;">🚀 任务:</div><div style="color: var(--text-muted); line-height: 1.5;">${task}</div>`;
                     } else {
@@ -362,12 +362,11 @@ async function sendMessage() {
     let accumulatedText = "";
     let forceNewMessageDiv = true;
 
-    const response = await fetch('/v1/chat/completions', {
+    const response = await fetch(`/api/conversations/${currentConversationId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            messages: [{ role: "user", content: message }],
-            conversation_id: currentConversationId
+            messages: [{ role: "user", content: message }]
         })
     });
 
@@ -454,9 +453,9 @@ async function sendMessage() {
         const newTitle = message.substring(0, 30).trim() + (message.length > 30 ? '...' : '');
         conversations[currentConversationId].title = newTitle;
         document.getElementById('conversation-title').textContent = newTitle;
-        
+
         // 异步同步到后端，不需要等待
-        fetch(`/v1/conversation/${currentConversationId}/title`, {
+        fetch(`/api/conversations/${currentConversationId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ title: newTitle })
@@ -470,7 +469,7 @@ async function sendMessage() {
 async function deleteConversation(convId) {
     if (confirm('确定要删除这个会话吗？此操作不可撤销。')) {
         try {
-            const response = await fetch(`/v1/conversation/${convId}`, {
+            const response = await fetch(`/api/conversations/${convId}`, {
                 method: 'DELETE'
             });
             if (!response.ok) {
@@ -494,13 +493,13 @@ async function deleteConversation(convId) {
 
 async function updateConversationList() {
     const listDiv = document.getElementById('conversation-list');
-    
+
     try {
-        const response = await fetch('/v1/conversations');
+        const response = await fetch('/api/conversations');
         if (response.ok) {
             const data = await response.json();
             const backendConversations = data.conversations || [];
-            
+
             listDiv.innerHTML = '';
             backendConversations.forEach(conv => {
                 const convId = conv.id;
@@ -562,7 +561,7 @@ document.getElementById('message-input').addEventListener('paste', (e) => {
 });
 
 // 确保在删除内容时，输入框能彻底清空以触发 :empty 伪类显示占位符
-document.getElementById('message-input').addEventListener('input', function() {
+document.getElementById('message-input').addEventListener('input', function () {
     if (this.innerText.trim() === "") {
         this.innerHTML = "";
     }
@@ -571,11 +570,6 @@ document.getElementById('message-input').addEventListener('input', function() {
 lucide.createIcons();
 async function initApp() {
     await updateConversationList();
-    const list = document.getElementById('conversation-list');
-    const firstItem = list.querySelector('.conversation-item');
-    if (firstItem) {
-        const convId = firstItem.title;
-        loadConversation(convId);
-    }
+    updateNewSessionUI(true);
 }
 initApp();
