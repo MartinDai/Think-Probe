@@ -8,7 +8,7 @@ from app.context.conversation_context import ConversationContext
 from app.core.llm import MODEL_NAME
 from app.agents.base import Agent
 from app.agents.runner import run_agent_stream
-from app.agents.orchestrator import orchestrator_agent
+from app.agents.main import main_agent
 from app.agents.java_expert import java_expert_agent
 from app.service import conversation_service
 from app.utils import response_util
@@ -17,9 +17,9 @@ from app.utils import response_util
 async def get_main_agent() -> Agent:
     """Build the main agent with all sub-agents wired up"""
     return Agent(
-        name=orchestrator_agent.name,
-        instructions=orchestrator_agent.instructions,
-        tools=orchestrator_agent.tools,
+        name=main_agent.name,
+        instructions=main_agent.instructions,
+        tools=main_agent.tools,
         sub_agents=[java_expert_agent],
     )
 
@@ -28,10 +28,10 @@ async def process_message(message: str, context: ConversationContext):
     conversation_id = context.conversation_id
     messages = context.messages
 
-    # Append user message and persist to orchestrator's JSONL
+    # Append user message and persist to main agent's JSONL
     user_msg = HumanMessage(content=message)
     messages.append(user_msg)
-    conversation_service.append_message(conversation_id, "orchestrator", user_msg)
+    conversation_service.append_message(conversation_id, "main", user_msg)
 
     agent = await get_main_agent()
 

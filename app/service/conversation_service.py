@@ -74,7 +74,7 @@ def append_message(conversation_id: str, agent_name: str, message: BaseMessage, 
     with open(file_path, 'a', encoding='utf-8') as f:
         f.write(json.dumps(msg_dict, ensure_ascii=False) + '\n')
 
-    if agent_name == "orchestrator":
+    if agent_name == "main":
         update_metadata(conversation_id, {})
 
     logger.info(f"Persisted {msg_dict.get('role')} message to {agent_name}.jsonl")
@@ -121,9 +121,9 @@ def _read_jsonl_dicts(conversation_id: str, agent_name: str) -> list[dict]:
 
 def get_conversation_timeline(conversation_id: str) -> dict | None:
     """
-    Build the full conversation timeline from the orchestrator's perspective.
+    Build the full conversation timeline from the main agent's perspective.
 
-    Returns a structured dict where each message in the orchestrator's timeline
+    Returns a structured dict where each message in the main agent's timeline
     is preserved. For messages that reference a sub-agent (via sub_agent_file),
     the sub-agent's messages are embedded as a nested list.
 
@@ -153,7 +153,7 @@ def get_conversation_timeline(conversation_id: str) -> dict | None:
     if not conversation_exists(conversation_id):
         return None
 
-    orchestrator_records = _read_jsonl_dicts(conversation_id, "orchestrator")
+    orchestrator_records = _read_jsonl_dicts(conversation_id, "main")
 
     # For each record that has a sub_agent_file reference, load and embed sub-agent messages
     for record in orchestrator_records:
@@ -205,9 +205,9 @@ def list_conversations() -> list[dict]:
             conv_id = conv_dir.name
             meta = get_metadata(conv_id)
 
-            # Fallback: if no meta.json, try to get info from orchestrator.jsonl
+            # Fallback: if no meta.json, try to get info from main.jsonl
             if not meta:
-                records = _read_jsonl_dicts(conv_id, "orchestrator")
+                records = _read_jsonl_dicts(conv_id, "main")
                 if records:
                     first_msg = records[0]
                     last_msg = records[-1]
@@ -232,9 +232,9 @@ def list_conversations() -> list[dict]:
 
 
 def conversation_exists(conversation_id: str) -> bool:
-    """Check if a conversation directory exists with orchestrator messages"""
+    """Check if a conversation directory exists with main agent messages"""
     dir_path = RUNTIME_DIR / CONVERSATIONS_DIR / conversation_id
-    return dir_path.exists() and (dir_path / "orchestrator.jsonl").exists()
+    return dir_path.exists() and (dir_path / "main.jsonl").exists()
 
 
 def delete_conversation(conversation_id: str) -> bool:

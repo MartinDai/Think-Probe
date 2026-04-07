@@ -61,8 +61,8 @@ async def create_message(conversation_id: str, request: Request):
 
     context = ConversationContext(conversation_id)
     if conversation_service.conversation_exists(conversation_id):
-        # 加载已有的编排器消息
-        context.messages = conversation_service.get_messages(conversation_id, "orchestrator")
+        # 加载已有的主代理消息
+        context.messages = conversation_service.get_messages(conversation_id, "main")
 
     return StreamingResponse(
         workflow_service.process_message(message_content, context),
