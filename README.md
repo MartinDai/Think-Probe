@@ -7,7 +7,7 @@ Think-Probe 是一个基于 LLM 的轻量级智能体应用，旨在展示如何
 ## ✨ 核心特性
 
 - **🤔 深度思考可视化**：支持展示 LLM 的 `reasoning_content`（思考链），让 AI 的决策过程不再是“黑盒”。
-- **🤖 多智能体协作**：采用由 Orchestrator（编排者）统领、子智能体（如 Java 专家）协作的架构。
+- **🤖 多智能体协作**：采用由 Main Agent（主智能体）统领、子智能体（如 Java 专家）协作的架构。
 - **🛠️ 工具与 MCP 支持**：支持 LangChain 工具调用，并可无缝接入 Model Context Protocol (MCP) 数据源。
 - **🌊 实时流式响应**：通过 Server-Sent Events (SSE) 实现打字机式的实时输出。
 - **📱 现代化 UI**：清新简约的响应式界面，支持会话列表管理、消息记录持久化。
