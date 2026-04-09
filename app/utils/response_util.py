@@ -1,43 +1,44 @@
-import uuid
-from datetime import datetime
+import json
+from typing import Dict, Any, Optional
 
+class SSEBuilder:
+    @staticmethod
+    def _build(event_type: str, data: Optional[Dict[str, Any]] = None, sub_agent: Optional[str] = None) -> str:
+        payload = {"type": event_type}
+        if data is not None:
+            payload["data"] = data
+        if sub_agent is not None:
+            payload["sub_agent"] = sub_agent
+        return f"data: {json.dumps(payload)}\n\n"
 
-def create_chunk(conversation_id=None, content=None, reasoning_content=None, role=None, model=None, finish=False):
-    chunk = {
-        "id": f"chatcmpl-{uuid.uuid4().hex[:10]}",  # 生成随机 ID
-        "object": "chat.completion.chunk",
-        "conversation_id": conversation_id,
-        "created": int(datetime.now().timestamp()),  # 时间戳
-        "model": model,
-        "choices": [{
-            "delta": {},
-            "finish_reason": None,
-        }]
-    }
-    if finish:
-        chunk["choices"][0]["finish_reason"] = "stop"
-    else:
-        delta = {"role": role}
-        if content is not None:
-            delta["content"] = content
-        if reasoning_content is not None:
-            delta["reasoning_content"] = reasoning_content
-        chunk["choices"][0]["delta"] = delta
+    @staticmethod
+    def content(text: str, sub_agent: Optional[str] = None) -> str:
+        return SSEBuilder._build("content", {"text": text}, sub_agent)
 
-    return chunk
+    @staticmethod
+    def reasoning(text: str, sub_agent: Optional[str] = None) -> str:
+        return SSEBuilder._build("reasoning", {"text": text}, sub_agent)
 
+    @staticmethod
+    def tool_start(name: str, args: Dict[str, Any], sub_agent: Optional[str] = None) -> str:
+        return SSEBuilder._build("tool_start", {"name": name, "args": args}, sub_agent)
 
-def create_step_done(conversation_id=None):
-    chunk = {
-        "id": f"chatcmpl-{uuid.uuid4().hex[:10]}",  # 生成随机 ID
-        "object": "chat.completion.step.done",
-        "conversation_id": conversation_id,
-        "created": int(datetime.now().timestamp()),  # 时间戳
-        "model": "none",
-        "choices": [{
-            "index": 0,
-            "delta": {"role": "assistant", "content": "\n"},
-            "finish_reason": None,
-        }]
-    }
-    return chunk
+    @staticmethod
+    def tool_end(name: str, result: str, sub_agent: Optional[str] = None) -> str:
+        return SSEBuilder._build("tool_end", {"name": name, "result": result}, sub_agent)
+
+    @staticmethod
+    def sub_agent_start(name: str, task: str, sub_agent: Optional[str] = None) -> str:
+        return SSEBuilder._build("sub_agent_start", {"name": name, "task": task}, sub_agent)
+
+    @staticmethod
+    def sub_agent_end(result: str, sub_agent: Optional[str] = None) -> str:
+        return SSEBuilder._build("sub_agent_end", {"result": result}, sub_agent)
+
+    @staticmethod
+    def step_done() -> str:
+        return SSEBuilder._build("step_done")
+
+    @staticmethod
+    def error(message: str) -> str:
+        return SSEBuilder._build("error", {"message": message})

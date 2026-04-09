@@ -501,7 +501,7 @@ async function sendMessage() {
                             targetLevel = containerStack[containerStack.length - 1];
                         }
 
-                        if (jsonData.object === 'chat.completion.step.done') {
+                        if (jsonData.type === 'step_done') {
                             if (accumulatedText || accumulatedThought) {
                                 saveMessage('assistant', accumulatedText, accumulatedThought);
                             }
@@ -510,15 +510,17 @@ async function sendMessage() {
                             responseContainer = null;
                             thoughtContainer = null;
                             currentAIMessageContainer = null;
-                        } else if (jsonData.choices && jsonData.choices[0].delta) {
-                            const delta = jsonData.choices[0].delta;
+                        } else if (jsonData.type === 'error') {
+                            addMessage('assistant', `❌ 错误: ${jsonData.data.message || '未知错误'}`);
+                        } else if (jsonData.type) {
+                            const data = jsonData.data || {};
 
                             // 1. 处理结构化事件 (子 Agent 开始/结束，工具开始/结束)
-                            if (delta.sub_agent_start) {
+                            if (jsonData.type === 'sub_agent_start') {
                                 hideLoadingIndicator();
-                                const { wrapper, content } = createSubAgentWrapper(delta.sub_agent_start.name, delta.sub_agent_start.task, targetLevel.container);
+                                const { wrapper, content } = createSubAgentWrapper(data.name, data.task, targetLevel.container);
                                 containerStack.push({
-                                    name: delta.sub_agent_start.name,
+                                    name: data.name,
                                     container: content,
                                     subAgentWrapper: wrapper
                                 });
@@ -527,36 +529,31 @@ async function sendMessage() {
                                 continue;
                             }
 
-                            if (delta.sub_agent_end) {
+                            if (jsonData.type === 'sub_agent_end') {
                                 const last = containerStack.pop();
                                 if (last && last.subAgentWrapper) {
-                                    if (delta.sub_agent_end.result) {
-                                        // 只有当没有流式输出内容时，才在最后渲染 Result (或者渲染简略 Result)
-                                        // 这里我们暂时保留，但可以根据样式决定是否显示
-                                        renderSubAgentResult(last.subAgentWrapper, delta.sub_agent_end.result);
+                                    if (data.result) {
+                                        renderSubAgentResult(last.subAgentWrapper, data.result);
                                     }
-                                    // 自动收起
                                     last.subAgentWrapper.classList.remove('expanded');
                                     last.container.classList.add('hidden');
                                 }
-                                // 返回外层
                                 showLoadingIndicator(containerStack[containerStack.length - 1].container);
                                 currentAIMessageContainer = null; // 切换回主容器，确保下次开启新气泡
                                 continue;
                             }
 
-                            if (delta.tool_start) {
+                            if (jsonData.type === 'tool_start') {
                                 hideLoadingIndicator();
-                                targetLevel._pendingTool = delta.tool_start;
+                                targetLevel._pendingTool = data;
                                 continue;
                             }
 
-                            if (delta.tool_end) {
-                                const toolStart = targetLevel._pendingTool || { name: delta.tool_end.name };
-                                renderToolCall({ name: toolStart.name, result: delta.tool_end.result }, toolStart.args, targetLevel.container);
+                            if (jsonData.type === 'tool_end') {
+                                const toolStart = targetLevel._pendingTool || { name: data.name };
+                                renderToolCall({ name: toolStart.name, result: data.result }, toolStart.args, targetLevel.container);
                                 targetLevel._pendingTool = null;
                                 
-                                // 关键修复：工具执行完，后续的 AI 响应必须开启新气泡，以保证在工具区块下方显示
                                 currentAIMessageContainer = null;
                                 responseContainer = null;
                                 thoughtContainer = null;
@@ -566,7 +563,7 @@ async function sendMessage() {
                             }
 
                             // 2. 处理流式内容 (思考和正文)
-                            if (!currentAIMessageContainer && (delta.reasoning_content || delta.content)) {
+                            if (!currentAIMessageContainer && (jsonData.type === 'reasoning' || jsonData.type === 'content')) {
                                 hideLoadingIndicator();
                                 currentAIMessageContainer = addMessageComponent('assistant', '', targetLevel.container);
                                 responseContainer = null; // 重置 responseContainer 引用，因为它属于新的消息块
@@ -574,17 +571,17 @@ async function sendMessage() {
                             }
 
                             // 处理思考过程
-                            if (delta.reasoning_content) {
+                            if (jsonData.type === 'reasoning') {
                                 if (!thoughtContainer) {
                                     thoughtContainer = addMessageComponent('thought', '', currentAIMessageContainer);
                                 }
-                                accumulatedThought += delta.reasoning_content;
+                                accumulatedThought += data.text || '';
                                 const contentArea = thoughtContainer.querySelector('.thought-content');
                                 contentArea.innerHTML = marked.parse(accumulatedThought);
                             }
 
                             // 处理正式回复内容
-                            if (delta.content) {
+                            if (jsonData.type === 'content') {
                                 if (thoughtContainer && !thoughtContainer.classList.contains('collapsed')) {
                                     thoughtContainer.classList.add('collapsed');
                                 }
@@ -595,7 +592,7 @@ async function sendMessage() {
                                         currentAIMessageContainer.appendChild(responseContainer);
                                     }
                                 }
-                                accumulatedText += delta.content;
+                                accumulatedText += data.text || '';
                                 responseContainer.innerHTML = marked.parse(accumulatedText);
                             }
 

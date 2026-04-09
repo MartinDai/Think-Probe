@@ -9,7 +9,7 @@ from app.context.conversation_context import ConversationContext
 from app.core.llm import MODEL_NAME
 from app.core.graph import workflow, DB_PATH
 from app.service import conversation_service
-from app.utils import response_util
+from app.utils.response_util import SSEBuilder
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 
@@ -72,17 +72,10 @@ async def process_message(message: str, context: ConversationContext):
                     if not content and not reasoning:
                         continue
                     
-                    response_chunk = response_util.create_chunk(
-                        conversation_id,
-                        content,
-                        reasoning
-                    )
-                    
-                    # 关键修复：标记当前流是否属于子代理
-                    if current_sub_agent:
-                        response_chunk["sub_agent"] = current_sub_agent
-
-                    yield f"data: {json.dumps(response_chunk)}\n\n"
+                    if reasoning:
+                        yield SSEBuilder.reasoning(reasoning, sub_agent=current_sub_agent)
+                    if content:
+                        yield SSEBuilder.content(content, sub_agent=current_sub_agent)
 
                 elif kind == "on_tool_start":
                     tool_name = event["name"]
@@ -91,20 +84,17 @@ async def process_message(message: str, context: ConversationContext):
                     if tool_name == "transfer_to_java_expert":
                         current_sub_agent = "java_expert" # 记录当前激活的子代理
                         # 发送子代理开始信号
-                        response_chunk = response_util.create_chunk(conversation_id)
-                        response_chunk["choices"][0]["delta"]["sub_agent_start"] = {
-                            "name": "java_expert",
-                            "task": tool_args.get("task", "")
-                        }
-                        yield f"data: {json.dumps(response_chunk)}\n\n"
+                        yield SSEBuilder.sub_agent_start(
+                            name="java_expert", 
+                            task=tool_args.get("task", "")
+                        )
                     else:
-                         # 普通工具开始
-                        response_chunk = response_util.create_chunk(conversation_id)
-                        response_chunk["choices"][0]["delta"]["tool_start"] = {
-                            "name": tool_name,
-                            "args": tool_args
-                        }
-                        yield f"data: {json.dumps(response_chunk)}\n\n"
+                        # 普通工具开始
+                        yield SSEBuilder.tool_start(
+                            name=tool_name, 
+                            args=tool_args, 
+                            sub_agent=current_sub_agent
+                        )
 
                 elif kind == "on_tool_end":
                     tool_name = event["name"]
@@ -120,19 +110,16 @@ async def process_message(message: str, context: ConversationContext):
                     if tool_name == "transfer_to_java_expert":
                         current_sub_agent = None # 清除激活状态
                         # 子代理执行结束
-                        response_chunk = response_util.create_chunk(conversation_id)
-                        response_chunk["choices"][0]["delta"]["sub_agent_end"] = {
-                            "result": str(display_content)
-                        }
-                        yield f"data: {json.dumps(response_chunk)}\n\n"
+                        yield SSEBuilder.sub_agent_end(
+                            result=str(display_content)
+                        )
                     else:
                         # 普通工具结束
-                        response_chunk = response_util.create_chunk(conversation_id)
-                        response_chunk["choices"][0]["delta"]["tool_end"] = {
-                            "name": tool_name,
-                            "result": str(display_content)
-                        }
-                        yield f"data: {json.dumps(response_chunk)}\n\n"
+                        yield SSEBuilder.tool_end(
+                            name=tool_name, 
+                            result=str(display_content), 
+                            sub_agent=current_sub_agent
+                        )
 
                 # --- Step Done Marker ---
                 elif kind == "on_chain_end":
@@ -141,17 +128,11 @@ async def process_message(message: str, context: ConversationContext):
                     pass
 
         # Final signal
-        yield f"data: {json.dumps(response_util.create_step_done(conversation_id))}\n\n"
+        yield SSEBuilder.step_done()
 
     except Exception as e:
-        content = f"错误: {str(e)}"
-        logging.error(content, exc_info=True)
-        response_chunk = response_util.create_chunk(
-            conversation_id=conversation_id,
-            content=content,
-            role="assistant",
-            model=MODEL_NAME,
-        )
-        yield f"data: {json.dumps(response_chunk)}\n\n"
+        error_msg = f"错误: {str(e)}"
+        logging.error(error_msg, exc_info=True)
+        yield SSEBuilder.error(error_msg)
     finally:
         stop_service.clear_stop_event(conversation_id)
