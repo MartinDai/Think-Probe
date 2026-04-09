@@ -16,7 +16,7 @@ async def list_conversations():
 @router.get("/{conversation_id}")
 async def get_conversation(conversation_id: str):
     """获取特定会话的完整时间轴详情"""
-    timeline = conversation_service.get_conversation_timeline(conversation_id)
+    timeline = await conversation_service.get_conversation_timeline(conversation_id)
     if not timeline:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return timeline
@@ -62,7 +62,7 @@ async def create_message(conversation_id: str, request: Request):
     context = ConversationContext(conversation_id)
     if conversation_service.conversation_exists(conversation_id):
         # 加载已有的主代理消息
-        context.messages = conversation_service.get_messages(conversation_id, "main")
+        context.messages = await conversation_service.get_messages(conversation_id)
 
     return StreamingResponse(
         workflow_service.process_message(message_content, context),

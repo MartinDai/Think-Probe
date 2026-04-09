@@ -708,3 +708,48 @@ th {
 .copy-btn.copied {
     color: #2ea043;
 }
+
+/* Sub-agent Internal Message Layout (Compact/Linear) */
+.sub-agent-content .message {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 8px 0 !important;
+    margin: 0 0 16px 0 !important;
+    max-width: 100% !important;
+    animation: none; /* Disable individual message animation inside sub-agent */
+}
+
+.sub-agent-content .message.user {
+    color: var(--accent-cyan);
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.sub-agent-content .message.user::before {
+    content: "👤 TASK: ";
+}
+
+.sub-agent-content .message.assistant .content-area {
+    padding: 0 !important;
+    font-size: 14px;
+}
+
+.sub-agent-content .message.thought {
+    background: rgba(0, 0, 0, 0.05) !important;
+    border-radius: 8px !important;
+    margin-bottom: 12px !important;
+}
+
+.sub-agent-content .thought-header {
+    padding: 8px 16px;
+}
+
+.sub-agent-content .thought-content {
+    padding: 12px 16px;
+}
+
+.sub-agent-result {
+    margin-top: 10px;
+    border-radius: 0 0 12px 12px;
+}

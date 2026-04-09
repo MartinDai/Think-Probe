@@ -7,11 +7,12 @@ Think-Probe 是一个基于 LLM 的轻量级智能体应用，旨在展示如何
 ## ✨ 核心特性
 
 - **🤔 深度思考可视化**：支持展示 LLM 的 `reasoning_content`（思考链），让 AI 的决策过程不再是“黑盒”。
-- **🤖 多智能体协作**：采用由 Main Agent（主智能体）统领、子智能体（如 Java 专家）协作的架构。
+- **🕸️ LangGraph 驱动**：基于 LangGraph 的状态机架构，支持复杂的智能体流转与持久化会话（Checkpointer）。
+- **🤖 精细化子智能体协作**：具备独立的子智能体（如 Java 专家）执行容器，提供逻辑隔离的流式交互视图。
 - **🛠️ 工具与 MCP 支持**：支持 LangChain 工具调用，并可无缝接入 Model Context Protocol (MCP) 数据源。
-- **🌊 实时流式响应**：通过 Server-Sent Events (SSE) 实现打字机式的实时输出。
-- **📱 现代化 UI**：清新简约的响应式界面，支持会话列表管理、消息记录持久化。
-- **🏗️ 模块化架构**：核心逻辑清晰，易于扩展自己的智能体和工具。
+- **💾 会话持久化**：集成 SQLite 数据库，实现会话状态的实时保存与跨进程恢复。
+- **🌊 实时流式响应**：通过高度优化的 SSE 路由，支持主、子智能体交替流式输出，互不干扰。
+- **🏗️ 现代化 UI**：清新简约的响应式界面，支持智能滚动追踪、代码高亮与折叠式的思考链展示。
 
 ---
 
@@ -40,7 +41,7 @@ uv sync
 ```ini
 LLM_API_PATH=https://api.openai.com/v1 # 或您的代理地址
 LLM_API_KEY=sk-...
-LLM_MODEL_NAME=gpt-4o # 支持 thinking 模型的名称
+LLM_MODEL_NAME=qwen3.5-35b-a3b # 建议使用 Qwen2.5/3.5, GPT-4o, DeepSeek-V3 等
 ```
 
 ### 4. 运行应用
@@ -96,9 +97,12 @@ make linux-amd64
 
 ## 🛠️ 技术栈
 
-- **后端**: [FastAPI](https://fastapi.tiangolo.com/), [LangChain](https://www.langchain.com/)
+- **核心架构**: [LangGraph](https://www.langchain.com/langgraph), [LangChain](https://www.langchain.com/)
+- **后端框架**: [FastAPI](https://fastapi.tiangolo.com/)
+- **数据库**: SQLite (用于 Checkpoints 和消息持久化)
+- **观测性**: [Langfuse](https://langfuse.com/) (全链路追踪)
 - **包管理**: [uv](https://github.com/astral-sh/uv)
-- **前端**: Vanilla JS, CSS3, HTML5
+- **前端**: Vanilla JS (ES6+), CSS3 (Modern Flex/Grid), HTML5
 - **协议**: OpenAI API standard, MCP, SSE
 - **部署**: Docker, Docker Compose
 

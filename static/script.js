@@ -102,10 +102,13 @@ async function loadConversation(convId) {
     }, 50);
 }
 
-function renderMessagesList(messages, container) {
+function renderMessagesList(messages, container, isSubAgent = false) {
     let lastAiToolCalls = {}; // 用于匹配工具执行和它的参数
 
-    messages.forEach(msg => {
+    messages.forEach((msg, index) => {
+        if (isSubAgent && index === 0 && (msg.role === 'human' || msg.role === 'user')) {
+            return; // 跳过子 Agent 内部的第一条人类消息（任务已经在 Header 展示了）
+        }
         if (msg.role === 'human' || msg.role === 'user') {
             addMessageComponent('user', msg.content, container);
         } else if (msg.role === 'ai' || msg.role === 'assistant') {
@@ -130,7 +133,7 @@ function renderMessagesList(messages, container) {
         } else if (msg.role === 'tool') {
             const toolCall = lastAiToolCalls[msg.tool_call_id];
             const args = toolCall ? (toolCall.args || toolCall.arguments) : null;
-            const displayName = msg.name.replace(/^transfer_to_/, '');
+            const displayName = (msg.name || 'tool').replace(/^transfer_to_/, '');
 
             if (msg.sub_agent_messages && msg.sub_agent_messages.length > 0) {
                 const { wrapper, content } = createSubAgentWrapper(displayName, args ? (typeof args === 'object' ? args.task : null) : null, container, false);
@@ -145,7 +148,7 @@ function renderMessagesList(messages, container) {
                 }
 
                 // 递归渲染内部交互
-                renderMessagesList(msg.sub_agent_messages, content);
+                renderMessagesList(msg.sub_agent_messages, content, true);
 
                 // 最后显示工具汇总的最终结果 (始终可见)
                 if (msg.content) {
@@ -483,7 +486,20 @@ async function sendMessage() {
                 if (line.startsWith('data: ')) {
                     try {
                         const jsonData = JSON.parse(line.substring(6));
-                        const currentLevel = containerStack[containerStack.length - 1];
+                        
+                        // 确定当前应该渲染到的容器
+                        let targetLevel = containerStack[containerStack.length - 1];
+                        if (jsonData.sub_agent) {
+                            // 如果显式指定了子代理，尝试在栈中找到它
+                            const found = containerStack.find(l => l.name === jsonData.sub_agent);
+                            if (found) {
+                                targetLevel = found;
+                            }
+                        } else if (containerStack.length > 1) {
+                            // 如果没有指定，但当前正在子代理中，且该消息没有 sub_agent 标记（可能是主代理的汇总）
+                            // 此时由于 sub_agent_end 还没发，我们就默认它还是属于当前的
+                            targetLevel = containerStack[containerStack.length - 1];
+                        }
 
                         if (jsonData.object === 'chat.completion.step.done') {
                             if (accumulatedText || accumulatedThought) {
@@ -499,56 +515,62 @@ async function sendMessage() {
 
                             // 1. 处理结构化事件 (子 Agent 开始/结束，工具开始/结束)
                             if (delta.sub_agent_start) {
-                                // 移除外层 Loading，显示在子 Agent 内部
                                 hideLoadingIndicator();
-                                const { wrapper, content } = createSubAgentWrapper(delta.sub_agent_start.name, delta.sub_agent_start.task, currentLevel.container);
+                                const { wrapper, content } = createSubAgentWrapper(delta.sub_agent_start.name, delta.sub_agent_start.task, targetLevel.container);
                                 containerStack.push({
+                                    name: delta.sub_agent_start.name,
                                     container: content,
                                     subAgentWrapper: wrapper
                                 });
                                 showLoadingIndicator(content);
-                                currentAIMessageContainer = null; // 为子 Agent 开启新的消息块
+                                currentAIMessageContainer = null; // 切换容器，清空当前消息块引用
                                 continue;
                             }
 
                             if (delta.sub_agent_end) {
                                 const last = containerStack.pop();
-                                const currentLevel = containerStack[containerStack.length - 1];
-                                if (last.subAgentWrapper) {
+                                if (last && last.subAgentWrapper) {
                                     if (delta.sub_agent_end.result) {
+                                        // 只有当没有流式输出内容时，才在最后渲染 Result (或者渲染简略 Result)
+                                        // 这里我们暂时保留，但可以根据样式决定是否显示
                                         renderSubAgentResult(last.subAgentWrapper, delta.sub_agent_end.result);
                                     }
                                     // 自动收起
                                     last.subAgentWrapper.classList.remove('expanded');
                                     last.container.classList.add('hidden');
                                 }
-                                // 返回外层，继续显示 Loading
-                                showLoadingIndicator(currentLevel.container);
-                                currentAIMessageContainer = null;
+                                // 返回外层
+                                showLoadingIndicator(containerStack[containerStack.length - 1].container);
+                                currentAIMessageContainer = null; // 切换回主容器，确保下次开启新气泡
                                 continue;
                             }
 
                             if (delta.tool_start) {
                                 hideLoadingIndicator();
-                                // 暂存工具调用信息，等 tool_end 一并渲染
-                                currentLevel._pendingTool = delta.tool_start;
+                                targetLevel._pendingTool = delta.tool_start;
                                 continue;
                             }
 
                             if (delta.tool_end) {
-                                const toolStart = currentLevel._pendingTool || { name: delta.tool_end.name };
-                                renderToolCall({ name: toolStart.name, result: delta.tool_end.result }, toolStart.args, currentLevel.container);
-                                currentLevel._pendingTool = null;
+                                const toolStart = targetLevel._pendingTool || { name: delta.tool_end.name };
+                                renderToolCall({ name: toolStart.name, result: delta.tool_end.result }, toolStart.args, targetLevel.container);
+                                targetLevel._pendingTool = null;
                                 
-                                // 工具执行完，AI 继续思考，显示 Loading
-                                showLoadingIndicator(currentLevel.container);
+                                // 关键修复：工具执行完，后续的 AI 响应必须开启新气泡，以保证在工具区块下方显示
+                                currentAIMessageContainer = null;
+                                responseContainer = null;
+                                thoughtContainer = null;
+                                
+                                showLoadingIndicator(targetLevel.container);
                                 continue;
                             }
 
                             // 2. 处理流式内容 (思考和正文)
                             if (!currentAIMessageContainer && (delta.reasoning_content || delta.content)) {
                                 hideLoadingIndicator();
-                                currentAIMessageContainer = addMessageComponent('assistant', '', currentLevel.container);
+                                currentAIMessageContainer = addMessageComponent('assistant', '', targetLevel.container);
+                                responseContainer = null; // 重置 responseContainer 引用，因为它属于新的消息块
+                                thoughtContainer = null;
                             }
 
                             // 处理思考过程
@@ -559,7 +581,6 @@ async function sendMessage() {
                                 accumulatedThought += delta.reasoning_content;
                                 const contentArea = thoughtContainer.querySelector('.thought-content');
                                 contentArea.innerHTML = marked.parse(accumulatedThought);
-                                document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
                             }
 
                             // 处理正式回复内容
@@ -568,20 +589,22 @@ async function sendMessage() {
                                     thoughtContainer.classList.add('collapsed');
                                 }
                                 if (!responseContainer) {
-                                    responseContainer = currentAIMessageContainer.querySelector('.content-area') ||
-                                        document.createElement('div');
+                                    responseContainer = currentAIMessageContainer.querySelector('.content-area') || document.createElement('div');
                                     if (!responseContainer.classList.contains('content-area')) {
                                         responseContainer.className = 'content-area';
                                         currentAIMessageContainer.appendChild(responseContainer);
                                     }
-                                    accumulatedText = "";
                                 }
                                 accumulatedText += delta.content;
                                 responseContainer.innerHTML = marked.parse(accumulatedText);
                             }
 
-                            // 统一滚动到底部
-                            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+                            // 统一滚动到底部 (仅当用户处于底部附近时才自动滚动)
+                            const messagesDiv = document.getElementById('messages');
+                            const isAtBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop <= messagesDiv.clientHeight + 100;
+                            if (isAtBottom) {
+                                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                            }
                         }
                     } catch (e) {
                         console.error("JSON parse error:", e);
