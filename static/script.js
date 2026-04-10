@@ -3,6 +3,31 @@ let conversations = {};
 let isRequestLoading = false;
 let currentAbortController = null;
 let currentLoadingIndicator = null;
+let autoScrollEnabled = true;
+
+function scrollToBottom(force = false) {
+    const messagesDiv = document.getElementById('messages');
+    if (!messagesDiv) return;
+    
+    if (force) {
+        autoScrollEnabled = true;
+    }
+    
+    if (autoScrollEnabled) {
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+}
+
+function scrollToTop() {
+    const messagesDiv = document.getElementById('messages');
+    if (messagesDiv) {
+        autoScrollEnabled = false;
+        messagesDiv.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+}
+
+
+
 
 function updateNewSessionUI(isEmpty) {
     const container = document.getElementById('chat-container');
@@ -98,9 +123,10 @@ async function loadConversation(convId) {
 
     // 增加一个微小延时，确保 Markdown 和图标解析完成后的实际高度被计算
     setTimeout(() => {
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        scrollToBottom(true);
     }, 50);
 }
+
 
 function renderMessagesList(messages, container, isSubAgent = false) {
     let lastAiToolCalls = {}; // 用于匹配工具执行和它的参数
@@ -161,8 +187,9 @@ function renderMessagesList(messages, container, isSubAgent = false) {
         }
     });
     lucide.createIcons();
-    container.scrollTop = container.scrollHeight;
+    scrollToBottom();
 }
+
 
 function createSubAgentWrapper(displayName, task, container, expanded = true) {
     const wrapper = document.createElement('div');
@@ -207,7 +234,9 @@ function renderSubAgentResult(wrapper, content) {
     finalResult.innerHTML = `<strong style="color: #2ea043; display: flex; align-items: center; gap: 8px;"><i data-lucide="sparkle" style="width: 14px; height: 14px;"></i> 最终结果:</strong><div style="margin-top: 10px;">${marked.parse(content)}</div>`;
     wrapper.appendChild(finalResult);
     lucide.createIcons();
+    scrollToBottom();
 }
+
 
 function renderToolCall(msg, args, container, expanded = false) {
     const displayName = (msg.name || msg.type).replace(/^transfer_to_/, '');
@@ -272,7 +301,9 @@ function renderToolCall(msg, args, container, expanded = false) {
     toolCallDiv.appendChild(body);
     container.appendChild(toolCallDiv);
     lucide.createIcons();
+    scrollToBottom();
 }
+
 
 function copyToClipboard(btn) {
     let content = btn._copyContent;
@@ -348,9 +379,10 @@ function addMessageComponent(sender, text, container) {
 function addMessage(sender, text) {
     const messagesDiv = document.getElementById('messages');
     const el = addMessageComponent(sender, text, messagesDiv);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    scrollToBottom();
     return el;
 }
+
 
 function setLoadingState(isLoading) {
     isRequestLoading = isLoading;
@@ -382,13 +414,14 @@ function showLoadingIndicator(container = null) {
     currentLoadingIndicator.className = 'typing-indicator';
     currentLoadingIndicator.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
     target.appendChild(currentLoadingIndicator);
-    target.scrollTop = target.scrollHeight;
+    scrollToBottom();
     
     // 如果是在主消息区域，也确保滚动
     if (!container) {
-        document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        scrollToBottom();
     }
 }
+
 
 function hideLoadingIndicator() {
     if (currentLoadingIndicator && currentLoadingIndicator.parentElement) {
@@ -443,7 +476,9 @@ async function sendMessage() {
     input.style.overflowY = 'hidden';
 
     setLoadingState(true);
+    scrollToBottom(true); // 发送新消息时强制开启并执行滚动
     showLoadingIndicator();
+
     currentAbortController = new AbortController();
 
     try {
@@ -596,14 +631,11 @@ async function sendMessage() {
                                 responseContainer.innerHTML = marked.parse(accumulatedText);
                             }
 
-                            // 统一滚动到底部 (仅当用户处于底部附近时才自动滚动)
-                            const messagesDiv = document.getElementById('messages');
-                            const isAtBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop <= messagesDiv.clientHeight + 100;
-                            if (isAtBottom) {
-                                messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                            }
+                            // 统一滚动到底部
+                            scrollToBottom();
                         }
                     } catch (e) {
+
                         console.error("JSON parse error:", e);
                     }
                 }
@@ -749,5 +781,25 @@ lucide.createIcons();
 async function initApp() {
     await updateConversationList();
     updateNewSessionUI(true);
+
+    const messagesDiv = document.getElementById('messages');
+    const scrollTopBtn = document.getElementById('scroll-top-btn');
+    
+    messagesDiv.addEventListener('scroll', () => {
+        const isAtBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop <= messagesDiv.clientHeight + 50;
+        autoScrollEnabled = isAtBottom;
+        
+        // 显示/隐藏返回顶部按钮 (滚动超过 300px 显示)
+        if (messagesDiv.scrollTop > 300) {
+            scrollTopBtn.classList.remove('hidden');
+        } else {
+            scrollTopBtn.classList.add('hidden');
+        }
+    });
+    
+    lucide.createIcons();
 }
+
+
+
 initApp();

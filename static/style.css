@@ -753,3 +753,46 @@ th {
     margin-top: 10px;
     border-radius: 0 0 12px 12px;
 }
+
+/* Scroll Buttons */
+.scroll-btn {
+    position: absolute;
+    bottom: 120px;
+    right: 40px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--glass-bg);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border-color);
+    color: var(--accent-cyan);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 100;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+
+.scroll-btn:hover {
+    background: rgba(88, 166, 255, 0.1);
+    border-color: var(--accent-cyan);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px var(--accent-glow);
+}
+
+.scroll-btn.hidden {
+    opacity: 0;
+    transform: translateY(20px);
+    pointer-events: none;
+    display: flex !important;
+}
+
+@media (max-width: 768px) {
+    .scroll-btn {
+        right: 20px;
+        bottom: 150px;
+    }
+}
