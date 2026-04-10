@@ -1,4 +1,3 @@
-import json
 import logging
 
 from langchain_core.messages import HumanMessage
@@ -54,7 +53,9 @@ async def process_message(message: str, context: ConversationContext):
             graph = workflow.compile(checkpointer=saver)
             
             current_sub_agent = None
-            pending_sub_messages = []
+            current_sub_thread_id = None
+            pending_tool_calls = {} # name -> list[id]
+            running_tool_calls = {} # run_id -> id
             
             async for event in graph.astream_events(inputs, config=config, version="v2", name=trace_name):
                 kind = event["event"]
@@ -90,15 +91,21 @@ async def process_message(message: str, context: ConversationContext):
                         kwargs = msg.additional_kwargs if hasattr(msg, "additional_kwargs") else {}
                         reasoning_content = kwargs.get("reasoning_content")
                         
+                        if tool_calls:
+                            for tc in tool_calls:
+                                name = tc['name']
+                                if name not in pending_tool_calls:
+                                    pending_tool_calls[name] = []
+                                pending_tool_calls[name].append(tc['id'])
+                        
                         # Dual Write logic
                         if current_sub_agent:
-                            # 暂存在子代理栈里，等 sub_agent 结束后才能拿到它的真实 sub_thread_id
-                            pending_sub_messages.append({
-                                "role": "ai",
-                                "content": content,
-                                "tool_calls": tool_calls,
-                                "reasoning_content": reasoning_content
-                            })
+                            # 实时落库子代理的消息
+                            await conversation_service.save_message(
+                                conversation_id, "ai", content, tool_calls, 
+                                reasoning_content=reasoning_content,
+                                sub_thread_id=current_sub_thread_id
+                            )
                         else:
                             # 主代理的消息，直接入库
                             await conversation_service.save_message(
@@ -109,10 +116,16 @@ async def process_message(message: str, context: ConversationContext):
                     tool_name = event["name"]
                     tool_args = event["data"].get("input", {})
                     
+                    # 为当前工具提取或生成唯一的 tool_call_id
+                    tool_ids = pending_tool_calls.get(tool_name, [])
+                    actual_tool_id = tool_ids.pop(0) if tool_ids else event.get("run_id")
+                    running_tool_calls[event.get("run_id")] = actual_tool_id
+
                     if tool_name.startswith("transfer_to_"):
                         agent_name = tool_name.replace("transfer_to_", "")
-                        current_sub_agent = agent_name # 记录当前激活的子代理
-                        pending_sub_messages = [] # 清空栈
+                        current_sub_agent = agent_name
+                        current_sub_thread_id = f"{conversation_id}:{agent_name}:{actual_tool_id}"
+                        
                         # 发送子代理开始信号
                         yield SSEBuilder.sub_agent_start(
                             name=agent_name, 
@@ -141,27 +154,18 @@ async def process_message(message: str, context: ConversationContext):
                         if hasattr(tool_result, "artifact") and isinstance(tool_result.artifact, dict):
                             sub_t_id = tool_result.artifact.get("sub_thread_id")
                     
-                    actual_tool_call_id = getattr(tool_result, "tool_call_id", event.get("run_id"))
+                    actual_tool_call_id = running_tool_calls.pop(event.get("run_id"), event.get("run_id"))
                     
                     if tool_name.startswith("transfer_to_"):
-                        # 先把栈里子代理产生的所有消息落库
-                        for pm in pending_sub_messages:
-                            await conversation_service.save_message(
-                                conversation_id, pm["role"], pm["content"], pm.get("tool_calls"), 
-                                reasoning_content=pm.get("reasoning_content"),
-                                tool_name=pm.get("tool_name"),
-                                tool_call_id=pm.get("tool_call_id"),
-                                sub_thread_id=sub_t_id
-                            )
-                        pending_sub_messages = []
-                        
-                        # 然后把这个大工具的结果存入主线程 (ToolMessage)
+                        # 对于子代理大工具，把结果存入主线程 (ToolMessage)
+                        # 注意：子代理内部产生的消息已经在产生时实时落库了
                         await conversation_service.save_message(
                             conversation_id, "tool", str(display_content),
-                            tool_name=tool_name, tool_call_id=actual_tool_call_id, sub_thread_id=sub_t_id
+                            tool_name=tool_name, tool_call_id=actual_tool_call_id, sub_thread_id=current_sub_thread_id
                         )
                         
-                        current_sub_agent = None # 清除激活状态
+                        current_sub_agent = None 
+                        current_sub_thread_id = None
                         # 子代理执行结束
                         yield SSEBuilder.sub_agent_end(
                             result=str(display_content)
@@ -169,15 +173,15 @@ async def process_message(message: str, context: ConversationContext):
                     else:
                         # Dual write for common tools
                         if current_sub_agent:
-                            # 它是子代理调用的工具，暂存起来等子代理大工具结束时拿 sub_thread_id 一起落库
-                            pending_sub_messages.append({
-                                "role": "tool",
-                                "content": str(display_content),
-                                "tool_name": tool_name,
-                                "tool_call_id": actual_tool_call_id
-                            })
+                            # 子代理调用的工具，实时落库
+                            await conversation_service.save_message(
+                                conversation_id, "tool", str(display_content),
+                                tool_name=tool_name, 
+                                tool_call_id=actual_tool_call_id,
+                                sub_thread_id=current_sub_thread_id
+                            )
                         else:
-                            # 它是主代理调用的工具，直接落库
+                            # 主代理调用的工具，直接落库
                             await conversation_service.save_message(
                                 conversation_id, "tool", str(display_content),
                                 tool_name=tool_name, tool_call_id=actual_tool_call_id
@@ -194,6 +198,8 @@ async def process_message(message: str, context: ConversationContext):
                 elif kind == "on_chain_end":
                     pass
 
+        # 无需手动清理锚点消息，timeline 逻辑会自动通过 AIMessage 的 tool_calls 进行关联恢复
+
         # Final signal
         yield SSEBuilder.step_done()
 
@@ -201,29 +207,7 @@ async def process_message(message: str, context: ConversationContext):
         error_msg = f"错误: {str(e)}"
         logging.error(error_msg, exc_info=True)
         
-        # 兜底处理：如果发生异常时还有未落库的子代理消息
-        # current_sub_agent 和 pending_sub_messages 需要能被访问到，因为如果是中途异常，它们在之前已被赋值
-        try:
-            if 'current_sub_agent' in locals() and current_sub_agent and 'pending_sub_messages' in locals() and pending_sub_messages:
-                fallback_sub_t_id = f"error_{conversation_id}_{len(pending_sub_messages)}"
-                # 遍历落库所有遗留的子代理消息
-                for pm in pending_sub_messages:
-                    await conversation_service.save_message(
-                        conversation_id, pm["role"], pm["content"], pm.get("tool_calls"), 
-                        reasoning_content=pm.get("reasoning_content"),
-                        tool_name=pm.get("tool_name"),
-                        tool_call_id=pm.get("tool_call_id"),
-                        sub_thread_id=fallback_sub_t_id
-                    )
-                # 伪造一个锚点 ToolMessage 写入，以防消息沉底不可见
-                await conversation_service.save_message(
-                    conversation_id, "tool", "执行过程中此子代理发生异常中断。",
-                    tool_name=f"transfer_to_{current_sub_agent}", 
-                    tool_call_id="error_anchor", 
-                    sub_thread_id=fallback_sub_t_id
-                )
-        except Exception as inner_e:
-            logging.error(f"Failed to save fallback sub-agent messages: {inner_e}", exc_info=True)
+        # 无需手动清理锚点消息
 
         yield SSEBuilder.error(error_msg)
     finally:

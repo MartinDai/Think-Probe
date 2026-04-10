@@ -3,7 +3,7 @@ import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
-from sqlalchemy import select, delete, desc, asc
+from sqlalchemy import select, delete, desc, asc, update
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 
@@ -67,6 +67,21 @@ async def save_message(
         if conv:
             conv.updated_at = datetime.utcnow()
     return new_message
+
+async def update_message_content(conversation_id: str, tool_call_id: str, content: str) -> bool:
+    """Update the content of an existing message (usually an anchor)"""
+    async with get_session() as session:
+        stmt = update(Message).where(
+            Message.conversation_id == conversation_id,
+            Message.tool_call_id == tool_call_id
+        ).values(content=content)
+        result = await session.execute(stmt)
+        
+        # 同时更新会话的活跃时间
+        stmt_conv = update(Conversation).where(Conversation.id == conversation_id).values(updated_at=datetime.utcnow())
+        await session.execute(stmt_conv)
+        
+        return result.rowcount > 0
 
 async def get_messages(conversation_id: str, thread_id: str = None) -> list[BaseMessage]:
     """
@@ -139,7 +154,17 @@ async def get_conversation_timeline(conversation_id: str) -> dict | None:
             # 主线程消息
             main_messages.append(m)
 
+    # 构建 tool_call_id 到 tool_name 的索引，从主线程的 AI 消息中寻找
+    tool_call_to_name = {}
+    for m in main_messages:
+        if m.role == "ai" and m.tool_calls:
+            for tc in m.tool_calls:
+                tc_id = tc.get('id') or tc.get('tool_call_id')
+                if tc_id:
+                    tool_call_to_name[tc_id] = tc.get('name')
+
     # 组装返回结果
+    consumed_sub_threads = set()
     for m in main_messages:
         msg_dict = _message_to_dict(m)
         
@@ -147,8 +172,36 @@ async def get_conversation_timeline(conversation_id: str) -> dict | None:
             # 将子线程里的消息塞进去
             if m.sub_thread_id in sub_message_map:
                 msg_dict["sub_agent_messages"] = sub_message_map[m.sub_thread_id]
+                consumed_sub_threads.add(m.sub_thread_id)
                 
         records.append(msg_dict)
+
+    # 兜底：处理 orphaned (孤儿) 子线程消息
+    # 那些存在于 message 表中但主线程没有对应 transfer_to 锚点 (ToolMessage) 的消息
+    # 我们利用已有的 AIMessage 中的 tool_call 信息来恢复其名称
+    for thread_id, sub_msgs in sub_message_map.items():
+        if thread_id not in consumed_sub_threads:
+            parts = thread_id.split(":")
+            tool_call_id = parts[-1] if parts else "unknown"
+            # 优先从 AIMessage 的索引中找名字，找不到再从 sub_thread_id 拆分，最后兜底
+            recovered_name = tool_call_to_name.get(tool_call_id)
+            if not recovered_name and len(parts) >= 3:
+                recovered_name = f"transfer_to_{parts[-2]}"
+            
+            if not recovered_name:
+                recovered_name = "interrupted_sub_agent"
+                
+            # 创建虚拟锚点以确保消息不丢失
+            synthetic_anchor = {
+                "id": f"synthetic_{thread_id}",
+                "role": "tool",
+                "content": "任务执行已被中断或发生异常 (日志已自动恢复)",
+                "name": recovered_name,
+                "tool_call_id": tool_call_id,
+                "sub_thread_id": thread_id,
+                "sub_agent_messages": sub_msgs
+            }
+            records.append(synthetic_anchor)
 
     return {
         "conversation_id": conversation_id,

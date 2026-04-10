@@ -1,8 +1,8 @@
 import asyncio
-from typing import Annotated, TypedDict
+from typing import Annotated, TypedDict, Union
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import StructuredTool, InjectedToolCallId
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END, add_messages
 from langgraph.prebuilt import ToolNode
@@ -52,12 +52,18 @@ def create_agent_tool(agent: Agent) -> StructuredTool:
     """Wraps an Agent subgraph into a callable Tool for another agent."""
     builder = create_agent_subgraph(agent)
     
-    async def transfer_to_agent(task: str, context: str, config: RunnableConfig):
+    async def transfer_to_agent(
+        task: str, 
+        context: str, 
+        config: RunnableConfig, 
+        tool_call_id: Annotated[str, InjectedToolCallId]
+    ):
         from app.core.graph import DB_PATH
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
         
         parent_thread_id = config["configurable"]["thread_id"]
-        sub_thread_id = f"{parent_thread_id}:{agent.name}:{asyncio.get_event_loop().time()}"
+        # 使用基于 tool_call_id 的确定性子线程 ID
+        sub_thread_id = f"{parent_thread_id}:{tool_call_id}"
         
         sub_config = {
             "configurable": {"thread_id": sub_thread_id},
