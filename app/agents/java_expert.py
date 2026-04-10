@@ -1,5 +1,5 @@
 from app.agents.base import Agent
-from app.tools.source_code import get_source_code_tool
+from app.tools.source_code import get_source_code
 
 java_expert_agent = Agent(
     name="java_expert",
@@ -19,5 +19,5 @@ java_expert_agent = Agent(
         "2. **工具获取**：当需要更多数据时，调用工具并结合经验进行分析。\n"
         "3. **用户互动**：分析用户提供的信息，必要时调整现有计划。"
     ),
-    tools=[get_source_code_tool],
+    tools=[get_source_code],
 )

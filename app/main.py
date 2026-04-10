@@ -3,8 +3,16 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
+from contextlib import asynccontextmanager
 
-app = FastAPI()
+from app.store.database import init_db
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 # 挂载静态文件目录
 app.mount("/static", StaticFiles(directory="static"), name="static")

@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/conversations", tags=["Conversations"])
 @router.get("")
 async def list_conversations():
     """获取所有会话列表"""
-    return {"conversations": conversation_service.list_conversations()}
+    return {"conversations": await conversation_service.list_conversations()}
 
 
 @router.get("/{conversation_id}")
@@ -26,7 +26,7 @@ async def get_conversation(conversation_id: str):
 async def update_conversation(conversation_id: str, request: Request):
     """更新会话元数据（如标题）"""
     data = await request.json()
-    if not conversation_service.conversation_exists(conversation_id):
+    if not await conversation_service.conversation_exists(conversation_id):
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     updates = {}
@@ -34,14 +34,14 @@ async def update_conversation(conversation_id: str, request: Request):
         updates["title"] = data["title"]
 
     if updates:
-        conversation_service.update_metadata(conversation_id, updates)
+        await conversation_service.update_metadata(conversation_id, updates)
     return {"status": "success"}
 
 
 @router.delete("/{conversation_id}")
 async def delete_conversation(conversation_id: str):
     """删除会话"""
-    success = conversation_service.delete_conversation(conversation_id)
+    success = await conversation_service.delete_conversation(conversation_id)
     if not success:
         raise HTTPException(status_code=404, detail="Conversation not found or failed to delete")
     return {"status": "success"}
@@ -60,7 +60,7 @@ async def create_message(conversation_id: str, request: Request):
         raise HTTPException(status_code=400, detail="Message content is required")
 
     context = ConversationContext(conversation_id)
-    if conversation_service.conversation_exists(conversation_id):
+    if await conversation_service.conversation_exists(conversation_id):
         # 加载已有的主代理消息
         context.messages = await conversation_service.get_messages(conversation_id)
 

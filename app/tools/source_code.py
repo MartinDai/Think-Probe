@@ -1,7 +1,7 @@
 from langchain_core.tools import tool
 
-@tool(description="一个用于通过 Java 类全名获取其源代码的辅助工具。")
-def get_source_code_tool(class_full_name: str) -> str:
+@tool(description="通过 Java 类全名获取其源代码。")
+def get_source_code(class_full_name: str) -> str:
     print(f"call get_source_code_tool class_full_name:{class_full_name}")
 
     # 这里是mock的示例代码，真实的可以调用外部接口来实现
