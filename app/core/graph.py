@@ -22,39 +22,42 @@ os.makedirs(DB_DIR, exist_ok=True)
 DB_PATH = os.path.join(DB_DIR, "checkpoints.db")
 
 # --- Agent Registration ---
-# Dynamically generate tools for all registered sub-agents
+# 动态生成所有已注册子 Agent 的委派工具
 registered_sub_agents = [java_expert_agent]
 transfer_tools = [create_agent_tool(agent) for agent in registered_sub_agents]
 
-# Combined tools for the main agent (transfer tools + native tools like terminal)
+# 主 Agent 的完整工具集 = 委派工具 + 原生工具
 all_main_tools = transfer_tools + main_agent.tools
 
 # --- Main Graph ---
 def call_main_model(state: AgentState, config: RunnableConfig):
-    # 1. 尝试从动态 workspace 读取任务进度
+    # 1. 读取工作空间中的任务进度（如果存在）
     thread_id = config.get("configurable", {}).get("thread_id", "unknown")
     workspace_dir = WORKSPACE_BASE / thread_id
-    task_content = ""
+
+    instructions = main_agent.instructions
+
+    # 2. 注入任务进度上下文
     task_file = workspace_dir / "task.md"
-    
     if task_file.exists():
         try:
-            with open(task_file, "r") as f:
-                task_content = f.read().strip()
+            task_content = task_file.read_text(encoding="utf-8").strip()
+            if task_content:
+                instructions += (
+                    "\n\n---\n"
+                    "# Current Task Progress\n"
+                    f"```markdown\n{task_content}\n```\n"
+                    "请基于上述进度继续执行，从第一个未完成的步骤开始。"
+                )
         except Exception:
             pass
 
-    # 2. 构建动态指令
-    instructions = main_agent.instructions
-    if task_content:
-        instructions += f"\n\n### 当前任务进度 (Source of Truth):\n```markdown\n{task_content}\n```\n请基于上述进度继续执行，不要重复已完成的步骤。"
-
     system_msg = SystemMessage(content=instructions)
     
-    # 3. 过滤掉历史消息中的所有旧 SystemMessage，确保只有一个最新的指令
+    # 3. 过滤历史中的旧 SystemMessage，确保只有最新的指令
     filtered_messages = [m for m in state["messages"] if not isinstance(m, SystemMessage)]
     
-    # bind all dynamic sub-agent-tools and native tools to the main model
+    # 4. 绑定全部工具并调用
     model = DEFAULT_MODEL
     if all_main_tools:
         model = model.bind_tools(all_main_tools)
@@ -73,7 +76,7 @@ main_builder = StateGraph(AgentState)
 main_builder.add_node("main", call_main_model)
 
 if all_main_tools:
-    # Use native LangGraph ToolNode with all available tools
+    # 使用 LangGraph 原生 ToolNode 处理所有工具调用
     main_builder.add_node("tools", ToolNode(all_main_tools))
     main_builder.add_conditional_edges("main", route_main)
     main_builder.add_edge("tools", "main")
@@ -82,5 +85,5 @@ else:
 
 main_builder.add_edge(START, "main")
 
-# Export only the workflow builder; it will be compiled with a checkpointer where used.
+# 导出 workflow builder，在使用处编译并注入 checkpointer
 workflow = main_builder

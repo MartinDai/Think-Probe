@@ -2,7 +2,6 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional
 from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
 
@@ -53,10 +52,12 @@ def save_cwd(workspace_dir: Path, abs_path: Path):
     except Exception:
         return False
 
-@tool(
-    name="run_terminal_command",
-    description="在隔离的会话专用工作空间中执行终端命令。适用于文件系统、脚本执行及系统任务。环境具备持久 CWD，严禁使用 '..' 或绝对路径尝试逃逸沙箱。"
-)
+@tool(description=(
+    "在隔离的沙箱工作空间中执行 Shell 命令。环境具备持久 CWD。"
+    "适用于：运行构建系统、包管理器(pip/npm)、Git 操作、测试执行、服务启动等没有专用工具的系统任务。"
+    "不适用于：读取文件(用 read_file)、搜索代码(用 grep_search)、浏览目录(用 list_dir)、编辑文件(用 edit_file)。"
+    "安全规则：严禁使用 '..' 或工作空间外的绝对路径。"
+))
 def run_terminal_command(command: str, config: RunnableConfig) -> str:
     """
     运行 shell 命令。命令会在会话特定的沙盒路径下执行。
@@ -65,7 +66,7 @@ def run_terminal_command(command: str, config: RunnableConfig) -> str:
         command (str): 完整的 shell 命令字符串 (例如 'ls -R', 'python3 app.py')。
     """
     # 提取会话 ID (thread_id)
-    thread_id = config.get("configurable", {}).get("thread_id", "unknown_session")
+    thread_id = config.get("configurable", {}).get("thread_id", "default_session")
     
     # 初始化会话专用空间
     workspace_dir = get_workspace_dir(thread_id)
@@ -115,7 +116,6 @@ def run_terminal_command(command: str, config: RunnableConfig) -> str:
         current_rel_path = get_last_cwd(workspace_dir)
         
         response = [
-            f"--- Session Workspace Summary ({thread_id}) ---",
             f"Status: {'Success' if result.returncode == 0 else 'Failed'}",
             f"Exit Code: {result.returncode}",
             f"Duration: {duration:.2f}s",
