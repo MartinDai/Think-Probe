@@ -121,15 +121,15 @@ async def process_message(message: str, context: ConversationContext):
                     actual_tool_id = tool_ids.pop(0) if tool_ids else event.get("run_id")
                     running_tool_calls[event.get("run_id")] = actual_tool_id
 
-                    if tool_name.startswith("transfer_to_"):
-                        agent_name = tool_name.replace("transfer_to_", "")
+                    if tool_name == "sub_task":
+                        agent_name = "sub_task"
                         current_sub_agent = agent_name
                         current_sub_thread_id = f"{conversation_id}:{agent_name}:{actual_tool_id}"
                         
                         # 发送子代理开始信号
                         yield SSEBuilder.sub_agent_start(
                             name=agent_name, 
-                            task=tool_args.get("task", "")
+                            task=tool_args.get("task", "") or "执行子任务"
                         )
                     else:
                         # 普通工具开始
@@ -156,9 +156,8 @@ async def process_message(message: str, context: ConversationContext):
                     
                     actual_tool_call_id = running_tool_calls.pop(event.get("run_id"), event.get("run_id"))
                     
-                    if tool_name.startswith("transfer_to_"):
+                    if tool_name == "sub_task":
                         # 对于子代理大工具，把结果存入主线程 (ToolMessage)
-                        # 注意：子代理内部产生的消息已经在产生时实时落库了
                         await conversation_service.save_message(
                             conversation_id, "tool", str(display_content),
                             tool_name=tool_name, tool_call_id=actual_tool_call_id, sub_thread_id=current_sub_thread_id

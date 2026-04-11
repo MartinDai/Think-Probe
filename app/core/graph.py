@@ -7,9 +7,8 @@ from langgraph.graph import StateGraph, START, END, add_messages
 from langgraph.prebuilt import ToolNode
 
 from app.agents.main import main_agent
-from app.agents.java_expert import java_expert_agent
 from app.core.llm import DEFAULT_MODEL
-from app.core.agent_factory import create_agent_tool
+from app.core.agent_factory import create_sub_task_tool
 from app.tools.terminal import WORKSPACE_BASE
 
 # --- State Definition ---
@@ -22,12 +21,14 @@ os.makedirs(DB_DIR, exist_ok=True)
 DB_PATH = os.path.join(DB_DIR, "checkpoints.db")
 
 # --- Agent Registration ---
-# 动态生成所有已注册子 Agent 的委派工具
-registered_sub_agents = [java_expert_agent]
-transfer_tools = [create_agent_tool(agent) for agent in registered_sub_agents]
+# 主 Agent 的基础工具集（文件、搜索、终端等）
+base_tools = main_agent.tools
 
-# 主 Agent 的完整工具集 = 委派工具 + 原生工具
-all_main_tools = transfer_tools + main_agent.tools
+# 注册通用的子任务委派工具，它可以使用所有基础工具
+sub_task_tool = create_sub_task_tool(base_tools)
+
+# 主 Agent 的完整工具集 = 子任务工具 + 基础工具
+all_main_tools = [sub_task_tool] + base_tools
 
 # --- Main Graph ---
 def call_main_model(state: AgentState, config: RunnableConfig):

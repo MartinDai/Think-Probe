@@ -141,7 +141,7 @@ async def get_conversation_timeline(conversation_id: str) -> dict | None:
     sub_message_map = {} # thread_id -> list[dict]
     
     for m in all_msgs:
-        if m.role == "tool" and m.sub_thread_id and m.tool_name and m.tool_name.startswith("transfer_to_"):
+        if m.role == "tool" and m.sub_thread_id and m.tool_name == "sub_task":
             # 这是一个指代子线程的工具消息，存在于主线程中
             main_messages.append(m)
         elif m.sub_thread_id:
@@ -168,7 +168,7 @@ async def get_conversation_timeline(conversation_id: str) -> dict | None:
     for m in main_messages:
         msg_dict = _message_to_dict(m)
         
-        if m.role == "tool" and m.sub_thread_id and m.tool_name and m.tool_name.startswith("transfer_to_"):
+        if m.role == "tool" and m.sub_thread_id and m.tool_name == "sub_task":
             # 将子线程里的消息塞进去
             if m.sub_thread_id in sub_message_map:
                 msg_dict["sub_agent_messages"] = sub_message_map[m.sub_thread_id]
@@ -185,11 +185,8 @@ async def get_conversation_timeline(conversation_id: str) -> dict | None:
             tool_call_id = parts[-1] if parts else "unknown"
             # 优先从 AIMessage 的索引中找名字，找不到再从 sub_thread_id 拆分，最后兜底
             recovered_name = tool_call_to_name.get(tool_call_id)
-            if not recovered_name and len(parts) >= 3:
-                recovered_name = f"transfer_to_{parts[-2]}"
-            
             if not recovered_name:
-                recovered_name = "interrupted_sub_agent"
+                recovered_name = "sub_task"
                 
             # 创建虚拟锚点以确保消息不丢失
             synthetic_anchor = {

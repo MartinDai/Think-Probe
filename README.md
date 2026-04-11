@@ -9,11 +9,11 @@ Think-Probe 是一个基于 LLM 的轻量级自主编程智能体，旨在展示
 ### 🧠 智能体架构
 - **4-Block Contract Prompt**：系统指令采用 `Identity → Workflow → Tool Use Guidelines → Constraints` 四段式合同结构，与 Prompt 文件化管理，参考 Claude Code 的设计范式。
 - **ReAct 循环**：`Observe → Plan → Act → Verify` 标准化工作流，确保每步可验证。
-- **多智能体协作**：基于 Agent Registry 的动态子智能体委派机制，支持领域专家（如 Java Expert）的自动调度。
+- **通用子任务委派**：参考 Claude Code 的 `sub_task` 模式，支持主代理动态发起专家级子任务，子代理具备独立执行、深度分析和结果汇总能力。
 - **任务追踪**：对复杂任务自动维护 `task.md` 进度文件，支持长任务的断点续跑。
 
 ### 🛠️ 工具体系
-内置 7 个沙箱化原生工具，遵循 **专用优先** 原则和 `What + When + Why Not` 描述规范：
+内置 8 个沙箱化原生工具，遵循 **专用优先** 原则和 `What + When + Why Not` 描述规范：
 
 | 工具 | 职责 |
 | :--- | :--- |
@@ -24,6 +24,7 @@ Think-Probe 是一个基于 LLM 的轻量级自主编程智能体，旨在展示
 | `list_dir` | 浏览目录结构和项目布局 |
 | `grep_search` | 文本/正则搜索，快速定位代码 |
 | `bash` | 沙箱 Shell 执行，持久 CWD |
+| `sub_task` | 专家级子任务委派（动态生成子代理） |
 
 ### 🔒 安全沙箱
 - 每个会话拥有独立的隔离工作空间（`.workspace/{session_id}/`）
@@ -128,9 +129,10 @@ make linux-amd64
 app/
 ├── agents/             # 智能体定义
 │   ├── prompts/        # 系统 Prompt 文件（.md 格式，文件化管理）
+│   │   ├── main_agent.md # 主代理指令：身份、工作流、委派策略
+│   │   └── sub_agent.md  # 子代理指令：通用子任务执行标准
 │   ├── base.py         # Agent 基类
-│   ├── main.py         # 主智能体（加载 Prompt、注册工具）
-│   └── java_expert.py  # Java 领域专家子智能体
+│   └── main.py         # 主智能体入口（加载指令、绑定工具）
 ├── core/               # 核心架构
 │   ├── graph.py        # LangGraph 状态机与工具注册
 │   ├── llm.py          # LLM 配置与自定义模型

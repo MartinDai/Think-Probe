@@ -1,5 +1,6 @@
+from pathlib import Path
 import asyncio
-from typing import Annotated, TypedDict, Union
+from typing import Annotated, TypedDict, Union, List, Any
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import StructuredTool, InjectedToolCallId
@@ -7,7 +8,6 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END, add_messages
 from langgraph.prebuilt import ToolNode
 
-from app.agents.base import Agent
 from app.core.llm import DEFAULT_MODEL
 from app.schemas.agent import SubAgentInput
 
@@ -16,21 +16,21 @@ class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
 
-def create_agent_subgraph(agent: Agent) -> StateGraph:
-    """Dynamically compiles a StateGraph builder for a given Agent configuration."""
+def create_agent_subgraph(instructions: str, tools: List[Any] = None) -> StateGraph:
+    """Dynamically compiles a StateGraph builder for given instructions and tools."""
     def call_model(state: AgentState):
-        system_msg = SystemMessage(content=agent.instructions)
+        system_msg = SystemMessage(content=instructions)
         model = DEFAULT_MODEL
-        if agent.tools:
-            model = model.bind_tools(agent.tools)
+        if tools:
+            model = model.bind_tools(tools)
         response = model.invoke([system_msg] + state["messages"])
         return {"messages": [response]}
 
     builder = StateGraph(AgentState)
     builder.add_node("agent", call_model)
     
-    if agent.tools:
-        builder.add_node("tools", ToolNode(agent.tools))
+    if tools:
+        builder.add_node("tools", ToolNode(tools))
         
         def route(state: AgentState):
             last_message = state["messages"][-1]
@@ -48,11 +48,19 @@ def create_agent_subgraph(agent: Agent) -> StateGraph:
     return builder
 
 
-def create_agent_tool(agent: Agent) -> StructuredTool:
-    """Wraps an Agent subgraph into a callable Tool for another agent."""
-    builder = create_agent_subgraph(agent)
+def create_sub_task_tool(all_tools: List[Any]) -> StructuredTool:
+    """Creates a generic sub_task tool that uses a standard sub_agent.md prompt."""
     
-    async def transfer_to_agent(
+    # 获取 sub_agent.md 的路径
+    prompt_path = Path(__file__).parent.parent / "agents" / "prompts" / "sub_agent.md"
+    if not prompt_path.exists():
+        raise FileNotFoundError(f"Sub-agent prompt template not found at {prompt_path}")
+    
+    instructions = prompt_path.read_text(encoding="utf-8")
+    # 子代理默认获得传入的所有基础工具
+    builder = create_agent_subgraph(instructions, all_tools)
+    
+    async def sub_task_executor(
         task: str, 
         context: str, 
         config: RunnableConfig, 
@@ -70,7 +78,7 @@ def create_agent_tool(agent: Agent) -> StructuredTool:
             "callbacks": config.get("callbacks", [])
         }
         
-        # Combine context and task into the first human message
+        # 将背景和任务合并
         combined_prompt = task
         if context:
             combined_prompt = f"前置上下文:\n{context}\n\n目标任务:\n{task}"
@@ -82,14 +90,18 @@ def create_agent_tool(agent: Agent) -> StructuredTool:
             final_state = await graph.ainvoke(inputs, config=sub_config)
             
         last_ai = next((m for m in reversed(final_state["messages"]) if isinstance(m, AIMessage)), None)
-        result = last_ai.content if last_ai else f"{agent.name} finished with no content."
+        result = last_ai.content if last_ai else "Sub-agent finished with no response content."
         
         return result, {"sub_thread_id": sub_thread_id}
         
     return StructuredTool.from_function(
-        coroutine=transfer_to_agent,
-        name=f"transfer_to_{agent.name}",
-        description=f"委派任务给专门的子代理解：{agent.name}。能力范围：{agent.instructions[:200]}。当你需要深入查阅或执行该领域的事务时调用此工具。",
+        coroutine=sub_task_executor,
+        name="sub_task",
+        description=(
+            "委派一个复杂的子任务。子代理拥有与主代理相同的工具权限，专注于独立分析、代码编写或 Bug 排错。"
+            "当你需要深度排查或执行涉及多步操作的专业事务时调用此工具。"
+            "任务完成后，子代理会汇报关键总结。"
+        ),
         args_schema=SubAgentInput,
         response_format="content_and_artifact"
     )
