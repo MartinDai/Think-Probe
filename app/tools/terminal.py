@@ -53,13 +53,16 @@ def save_cwd(workspace_dir: Path, abs_path: Path):
     except Exception:
         return False
 
-@tool(description="在隔离的会话专用 workspace 目录中执行终端命令。支持状态保持，且不同会话之间物理隔离。")
-def execute_terminal_command(command: str, config: RunnableConfig) -> str:
+@tool(
+    name="run_terminal_command",
+    description="在隔离的会话专用工作空间中执行终端命令。适用于文件系统、脚本执行及系统任务。环境具备持久 CWD，严禁使用 '..' 或绝对路径尝试逃逸沙箱。"
+)
+def run_terminal_command(command: str, config: RunnableConfig) -> str:
     """
-    在服务器的隔离工作空间执行命令。每个会话（thread_id）都有独立的物理目录。
+    运行 shell 命令。命令会在会话特定的沙盒路径下执行。
     
-    参数:
-    command (str): 要执行的 Shell 命令。
+    Args:
+        command (str): 完整的 shell 命令字符串 (例如 'ls -R', 'python3 app.py')。
     """
     # 提取会话 ID (thread_id)
     thread_id = config.get("configurable", {}).get("thread_id", "unknown_session")

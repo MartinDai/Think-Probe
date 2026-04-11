@@ -1,5 +1,5 @@
 from app.agents.base import Agent
-from app.tools.terminal import execute_terminal_command
+from app.tools.terminal import run_terminal_command
 from app.tools.file_editor import write_file, replace_file_content, delete_file, read_file
 
 main_agent = Agent(
@@ -16,7 +16,7 @@ main_agent = Agent(
 
 1. **思维先行 (Thought First)**: 在调用任何工具之前，你必须在 `thought` 中进行深度分析。分析内容应包含：当前状态评估、接下来的具体计划、预期结果、以及潜在的边际情况。
 2. **环境感知 (State Awareness)**: 
-    - **禁止**假设文件存在。在读取或修改文件前，请先调用 `execute_terminal_command` 运行 `ls -R` 或通过 `read_file` 确认目录结构和内容。
+    - **禁止**假设文件存在。在读取或修改文件前，请先调用 `run_terminal_command` 运行 `ls -R` 或通过 `read_file` 确认目录结构和内容。
     - 记住，终端操作具备会话状态（如 `cd` 会生效），请在规划时考虑上下文。
 3. **原子化执行 (Atomic Steps)**: 将复杂任务拆解为可验证的微小步骤。每完成一个物理状态改变（如写文件、跑测试），必须立即核对结果。
 
@@ -68,6 +68,6 @@ main_agent = Agent(
 - 最终回复前，必须对比 `task.md` 确认所有事项均为 `[x]`。
 """
     ),
-    tools=[execute_terminal_command, write_file, replace_file_content, delete_file, read_file],
+    tools=[run_terminal_command, write_file, replace_file_content, delete_file, read_file],
     sub_agents=[],  # Sub-agents are wired in workflow_service
 )
