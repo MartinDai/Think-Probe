@@ -1,7 +1,7 @@
 [project]
 name = "Think-Probe"
 version = "0.1.0"
-description = "A thinking agent application"
+description = "A lightweight agent application based on LLM"
 authors = [
     {name = "MartinDai", email = "xiaomingys@gmail.com"},
 ]
@@ -10,7 +10,6 @@ requires-python = "==3.12.*"
 dependencies = [
     "langchain>=1.2.15",
     "langgraph>=1.1.6",
-    "langgraph-checkpoint-sqlite>=3.0.3",
     "langchain-openai>=1.1.12",
     "langchain-mcp-adapters>=0.2.2",
     "fastapi==0.115.12",

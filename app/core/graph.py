@@ -10,15 +10,10 @@ from app.agents.main import main_agent
 from app.core.llm import DEFAULT_MODEL
 from app.core.agent_factory import create_sub_task_tool
 from app.tools.terminal import WORKSPACE_BASE
-
 # --- State Definition ---
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
-# Persistence Setup
-DB_DIR = "conversations"
-os.makedirs(DB_DIR, exist_ok=True)
-DB_PATH = os.path.join(DB_DIR, "checkpoints.db")
 
 # --- Agent Registration ---
 # 主 Agent 的基础工具集（文件、搜索、终端等）
@@ -83,5 +78,5 @@ else:
 
 main_builder.add_edge(START, "main")
 
-# 导出 workflow builder，在使用处编译并注入 checkpointer
+# 导出 workflow builder
 workflow = main_builder

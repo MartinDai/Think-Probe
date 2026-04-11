@@ -260,7 +260,7 @@ async def conversation_exists(conversation_id: str) -> bool:
         return result.scalar_one_or_none() is not None
 
 async def delete_conversation(conversation_id: str) -> bool:
-    """Delete the conversation from DB and also clean up Checkpointer Directory"""
+    """Delete the conversation and its messages from DB, and clean up workspace data"""
     try:
         async with get_session() as session:
             # SQLite cascade is not guaranteed unless PRAGMA foreign_keys=ON

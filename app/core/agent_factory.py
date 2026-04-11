@@ -66,8 +66,6 @@ def create_sub_task_tool(all_tools: List[Any]) -> StructuredTool:
         config: RunnableConfig, 
         tool_call_id: Annotated[str, InjectedToolCallId]
     ):
-        from app.core.graph import DB_PATH
-        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
         
         parent_thread_id = config["configurable"]["thread_id"]
         # 使用基于 tool_call_id 的确定性子线程 ID
@@ -85,9 +83,8 @@ def create_sub_task_tool(all_tools: List[Any]) -> StructuredTool:
             
         inputs = {"messages": [HumanMessage(content=combined_prompt)]}
         
-        async with AsyncSqliteSaver.from_conn_string(DB_PATH) as saver:
-            graph = builder.compile(checkpointer=saver)
-            final_state = await graph.ainvoke(inputs, config=sub_config)
+        graph = builder.compile()
+        final_state = await graph.ainvoke(inputs, config=sub_config)
             
         last_ai = next((m for m in reversed(final_state["messages"]) if isinstance(m, AIMessage)), None)
         result = last_ai.content if last_ai else "Sub-agent finished with no response content."
