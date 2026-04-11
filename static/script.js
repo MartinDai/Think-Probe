@@ -162,7 +162,7 @@ function renderMessagesList(messages, container, isSubAgent = false) {
             const displayName = (msg.name || 'tool').replace(/^transfer_to_/, '');
 
             if (msg.sub_agent_messages && msg.sub_agent_messages.length > 0) {
-                const { wrapper, content } = createSubAgentWrapper(displayName, args ? (typeof args === 'object' ? args.task : null) : null, container, false);
+                const { wrapper, content } = createSubAgentWrapper("执行子任务", args ? (typeof args === 'object' ? args.task : null) : null, container, false);
                 if (args && !args.task) {
                     const argDiv = document.createElement('div');
                     argDiv.style.padding = '12px 20px';
@@ -197,7 +197,7 @@ function createSubAgentWrapper(displayName, task, container, expanded = true) {
 
     const header = document.createElement('div');
     header.className = 'sub-agent-header';
-    header.innerHTML = `<div style="display: flex; align-items: center; gap: 8px;"><i data-lucide="cpu" style="width: 16px; height: 16px;"></i><span>子 Agent: ${displayName}</span></div><i data-lucide="chevron-down" class="toggle-icon" style="width: 16px; height: 16px;"></i>`;
+    header.innerHTML = `<div style="display: flex; align-items: center; gap: 8px;"><i data-lucide="cpu" style="width: 16px; height: 16px;"></i><span>${displayName}</span></div><i data-lucide="chevron-down" class="toggle-icon" style="width: 16px; height: 16px;"></i>`;
 
     const content = document.createElement('div');
     content.className = 'sub-agent-content' + (expanded ? '' : ' hidden');
@@ -524,16 +524,12 @@ async function sendMessage() {
                         
                         // 确定当前应该渲染到的容器
                         let targetLevel = containerStack[containerStack.length - 1];
-                        if (jsonData.sub_agent) {
-                            // 如果显式指定了子代理，尝试在栈中找到它
-                            const found = containerStack.find(l => l.name === jsonData.sub_agent);
+                        if (jsonData.sub_thread_id) {
+                            // 如果显式指定了子线程 ID，尝试在栈中找到它
+                            const found = containerStack.find(l => l.sub_thread_id === jsonData.sub_thread_id);
                             if (found) {
                                 targetLevel = found;
                             }
-                        } else if (containerStack.length > 1) {
-                            // 如果没有指定，但当前正在子代理中，且该消息没有 sub_agent 标记（可能是主代理的汇总）
-                            // 此时由于 sub_agent_end 还没发，我们就默认它还是属于当前的
-                            targetLevel = containerStack[containerStack.length - 1];
                         }
 
                         if (jsonData.type === 'step_done') {
@@ -553,9 +549,10 @@ async function sendMessage() {
                             // 1. 处理结构化事件 (子 Agent 开始/结束，工具开始/结束)
                             if (jsonData.type === 'sub_agent_start') {
                                 hideLoadingIndicator();
-                                const { wrapper, content } = createSubAgentWrapper(data.name, data.task, targetLevel.container);
+                                // 名称不再重要，使用统一标题。传入 sub_thread_id 以便追踪。
+                                const { wrapper, content } = createSubAgentWrapper("执行子任务", data.task, targetLevel.container);
                                 containerStack.push({
-                                    name: data.name,
+                                    sub_thread_id: jsonData.sub_thread_id,
                                     container: content,
                                     subAgentWrapper: wrapper
                                 });
@@ -565,16 +562,24 @@ async function sendMessage() {
                             }
 
                             if (jsonData.type === 'sub_agent_end') {
-                                const last = containerStack.pop();
-                                if (last && last.subAgentWrapper) {
-                                    if (data.result) {
-                                        renderSubAgentResult(last.subAgentWrapper, data.result);
+                                // 查找并弹出匹配的子任务层
+                                const index = containerStack.findIndex(l => l.sub_thread_id === jsonData.sub_thread_id);
+                                if (index !== -1) {
+                                    const [target] = containerStack.splice(index, 1);
+                                    if (target.subAgentWrapper) {
+                                        if (data.result) {
+                                            renderSubAgentResult(target.subAgentWrapper, data.result);
+                                        }
+                                        target.subAgentWrapper.classList.remove('expanded');
+                                        target.container.classList.add('hidden');
                                     }
-                                    last.subAgentWrapper.classList.remove('expanded');
-                                    last.container.classList.add('hidden');
                                 }
-                                showLoadingIndicator(containerStack[containerStack.length - 1].container);
-                                currentAIMessageContainer = null; // 切换回主容器，确保下次开启新气泡
+                                
+                                const currentLevel = containerStack[containerStack.length - 1];
+                                if (currentLevel) {
+                                    showLoadingIndicator(currentLevel.container);
+                                }
+                                currentAIMessageContainer = null; // 切换回父容器，确保下次开启新气泡
                                 continue;
                             }
 

@@ -40,8 +40,7 @@ async def save_message(
     reasoning_content: str = None, 
     tool_name: str = None, 
     tool_call_id: str = None, 
-    sub_thread_id: str = None,
-    is_sub_agent: bool = False
+    sub_thread_id: str = None
 ) -> Message:
     msg_id = str(uuid.uuid4())
     tool_calls_dict = tool_calls if tool_calls else None
@@ -183,10 +182,9 @@ async def get_conversation_timeline(conversation_id: str) -> dict | None:
         if thread_id not in consumed_sub_threads:
             parts = thread_id.split(":")
             tool_call_id = parts[-1] if parts else "unknown"
-            # 优先从 AIMessage 的索引中找名字，找不到再从 sub_thread_id 拆分，最后兜底
-            recovered_name = tool_call_to_name.get(tool_call_id)
-            if not recovered_name:
-                recovered_name = "sub_task"
+            
+            # 优先从 AIMessage 的索引中找名字
+            recovered_name = tool_call_to_name.get(tool_call_id, "sub_task")
                 
             # 创建虚拟锚点以确保消息不丢失
             synthetic_anchor = {

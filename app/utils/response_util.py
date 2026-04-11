@@ -3,37 +3,38 @@ from typing import Dict, Any, Optional
 
 class SSEBuilder:
     @staticmethod
-    def _build(event_type: str, data: Optional[Dict[str, Any]] = None, sub_agent: Optional[str] = None) -> str:
+    def _build(event_type: str, data: Optional[Dict[str, Any]] = None, sub_thread_id: Optional[str] = None) -> str:
         payload = {"type": event_type}
         if data is not None:
             payload["data"] = data
-        if sub_agent is not None:
-            payload["sub_agent"] = sub_agent
+        if sub_thread_id is not None:
+            payload["sub_thread_id"] = sub_thread_id
         return f"data: {json.dumps(payload)}\n\n"
 
     @staticmethod
-    def content(text: str, sub_agent: Optional[str] = None) -> str:
-        return SSEBuilder._build("content", {"text": text}, sub_agent)
+    def content(text: str, sub_thread_id: Optional[str] = None) -> str:
+        return SSEBuilder._build("content", {"text": text}, sub_thread_id)
 
     @staticmethod
-    def reasoning(text: str, sub_agent: Optional[str] = None) -> str:
-        return SSEBuilder._build("reasoning", {"text": text}, sub_agent)
+    def reasoning(text: str, sub_thread_id: Optional[str] = None) -> str:
+        return SSEBuilder._build("reasoning", {"text": text}, sub_thread_id)
 
     @staticmethod
-    def tool_start(name: str, args: Dict[str, Any], sub_agent: Optional[str] = None) -> str:
-        return SSEBuilder._build("tool_start", {"name": name, "args": args}, sub_agent)
+    def tool_start(name: str, args: Dict[str, Any], sub_thread_id: Optional[str] = None) -> str:
+        return SSEBuilder._build("tool_start", {"name": name, "args": args}, sub_thread_id)
 
     @staticmethod
-    def tool_end(name: str, result: str, sub_agent: Optional[str] = None) -> str:
-        return SSEBuilder._build("tool_end", {"name": name, "result": result}, sub_agent)
+    def tool_end(name: str, result: str, sub_thread_id: Optional[str] = None) -> str:
+        return SSEBuilder._build("tool_end", {"name": name, "result": result}, sub_thread_id)
 
     @staticmethod
-    def sub_agent_start(name: str, task: str, sub_agent: Optional[str] = None) -> str:
-        return SSEBuilder._build("sub_agent_start", {"name": name, "task": task}, sub_agent)
+    def sub_agent_start(task: str, sub_thread_id: Optional[str] = None) -> str:
+        # 移除了 name 参数，只传 task
+        return SSEBuilder._build("sub_agent_start", {"task": task}, sub_thread_id)
 
     @staticmethod
-    def sub_agent_end(result: str, sub_agent: Optional[str] = None) -> str:
-        return SSEBuilder._build("sub_agent_end", {"result": result}, sub_agent)
+    def sub_agent_end(result: str, sub_thread_id: Optional[str] = None) -> str:
+        return SSEBuilder._build("sub_agent_end", {"result": result}, sub_thread_id)
 
     @staticmethod
     def step_done() -> str:
