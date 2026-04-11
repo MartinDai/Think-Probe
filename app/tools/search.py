@@ -7,7 +7,10 @@ from app.tools.terminal import get_workspace_dir
 
 
 def _validate_path(workspace_dir: Path, rel_path: str) -> Path:
-    """校验路径安全性并返回绝对路径"""
+    """校验路径安全性并返回绝对路径，仅允许相对路径"""
+    if rel_path.startswith("/") or rel_path.startswith("\\"):
+        raise ValueError("Security Error: 不允许使用绝对路径。请使用相对路径。")
+
     if ".." in rel_path:
         raise ValueError("Security Error: 路径中不允许包含 '..'。")
 
@@ -33,7 +36,7 @@ def list_dir(path: str, config: RunnableConfig) -> str:
     列出工作空间内指定目录的内容。
 
     Args:
-        path (str): 要列出的目录路径，相对于当前工作目录。使用 "." 表示当前目录。
+        path (str): 目录路径。必须使用【相对路径】（相对于当前工作目录）。禁止以 '/' 开头。使用 "." 表示当前目录。
     """
     thread_id = _get_thread_id(config)
     workspace_dir = get_workspace_dir(thread_id)
@@ -98,7 +101,7 @@ def grep_search(
 
     Args:
         pattern (str): 搜索模式，支持正则表达式（如 'def .*init' 或 'TODO'）。
-        path (str): 搜索的起始路径，相对于当前工作目录。使用 "." 搜索整个工作空间。
+        path (str): 搜索的起始路径。必须使用【相对路径】（相对于当前工作目录）。禁止以 '/' 开头。使用 "." 搜索整个工作空间。
         include (str): 可选。文件名过滤 glob（如 '*.py' 仅搜索 Python 文件）。
         ignore_case (bool): 是否忽略大小写匹配，默认 False。
     """

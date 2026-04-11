@@ -23,7 +23,7 @@ Think-Probe 是一个基于 LLM 的轻量级自主编程智能体，旨在展示
 | `delete_file` | 删除文件或目录 |
 | `list_dir` | 浏览目录结构和项目布局 |
 | `grep_search` | 文本/正则搜索，快速定位代码 |
-| `run_terminal_command` | 沙箱 Shell 执行，持久 CWD |
+| `bash` | 沙箱 Shell 执行，持久 CWD |
 
 ### 🔒 安全沙箱
 - 每个会话拥有独立的隔离工作空间（`.workspace/{session_id}/`）

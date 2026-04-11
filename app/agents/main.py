@@ -1,6 +1,6 @@
 from pathlib import Path
 from app.agents.base import Agent
-from app.tools.terminal import run_terminal_command
+from app.tools.terminal import bash
 from app.tools.file_editor import write_file, edit_file, delete_file, read_file
 from app.tools.search import list_dir, grep_search
 
@@ -27,7 +27,7 @@ main_agent = Agent(
         list_dir,
         grep_search,
         # 系统任务
-        run_terminal_command,
+        bash,
     ],
     sub_agents=[],  # Sub-agents are wired in workflow_service
 )

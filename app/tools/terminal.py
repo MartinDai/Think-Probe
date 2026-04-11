@@ -58,7 +58,7 @@ def save_cwd(workspace_dir: Path, abs_path: Path):
     "不适用于：读取文件(用 read_file)、搜索代码(用 grep_search)、浏览目录(用 list_dir)、编辑文件(用 edit_file)。"
     "安全规则：严禁使用 '..' 或工作空间外的绝对路径。"
 ))
-def run_terminal_command(command: str, config: RunnableConfig) -> str:
+def bash(command: str, config: RunnableConfig) -> str:
     """
     运行 shell 命令。命令会在会话特定的沙盒路径下执行。
     

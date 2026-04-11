@@ -5,7 +5,15 @@ from langchain_core.runnables import RunnableConfig
 from app.tools.terminal import get_workspace_dir, get_last_cwd
 
 def validate_and_get_abs_path(workspace_dir: Path, rel_file_path: str) -> Path:
-    """校验路径安全并返回绝对路径"""
+    """校验路径安全并返回绝对路径，仅允许在工作空间内的相对路径"""
+    # 显式禁止绝对路径
+    if rel_file_path.startswith("/") or rel_file_path.startswith("\\"):
+        raise ValueError("Security Error: Absolute paths are not allowed. Please use relative paths.")
+    
+    # 显式禁止协议头
+    if "://" in rel_file_path:
+         raise ValueError("Security Error: Protocol-based paths are not allowed.")
+
     if ".." in rel_file_path:
         raise ValueError("Security Error: Path traversal ('..') is not allowed.")
     
@@ -38,7 +46,7 @@ def write_file(file_path: str, content: str, config: RunnableConfig, append: boo
     在工作空间内写入文件。
 
     Args:
-        file_path (str): 目标文件路径，相对于当前工作目录。
+        file_path (str): 目标文件路径。必须使用【相对路径】（相对于当前工作目录）。禁止以 '/' 开头。
         content (str): 要写入的文件内容。
         append (bool): 若为 True，则追加内容而非覆盖。默认 False。
     """
@@ -68,7 +76,7 @@ def edit_file(file_path: str, old_content: str, new_content: str, config: Runnab
     搜索并替换文件中的精确字符串。
 
     Args:
-        file_path (str): 目标文件路径，相对于当前工作目录。
+        file_path (str): 目标文件路径。必须使用【相对路径】（相对于当前工作目录）。禁止以 '/' 开头。
         old_content (str): 要被替换的原始内容，必须与文件中的文本精确匹配（包含缩进和换行）。
         new_content (str): 替换后的新内容。
     """
@@ -103,7 +111,7 @@ def delete_file(file_path: str, config: RunnableConfig) -> str:
     删除沙箱内的文件或目录。
 
     Args:
-        file_path (str): 要删除的文件或目录路径，相对于当前工作目录。
+        file_path (str): 要删除的文件或目录路径。必须使用【相对路径】（相对于当前工作目录）。禁止以 '/' 开头。
     """
     thread_id = get_thread_id(config)
     workspace_dir = get_workspace_dir(thread_id)
@@ -132,7 +140,7 @@ def read_file(file_path: str, config: RunnableConfig, start_line: int = 0, end_l
     读取沙箱内的文件内容。
 
     Args:
-        file_path (str): 要读取的文件路径，相对于当前工作目录。
+        file_path (str): 要读取的文件路径。必须使用【相对路径】（相对于当前工作目录）。禁止以 '/' 开头。
         start_line (int): 起始行号（1-indexed，含），0 表示从头开始。
         end_line (int): 结束行号（1-indexed，含），0 表示读到文件末尾。
     """
