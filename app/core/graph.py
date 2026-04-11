@@ -55,15 +55,12 @@ def call_main_model(state: AgentState, config: RunnableConfig):
 
     system_msg = SystemMessage(content=instructions)
     
-    # 3. 过滤历史中的旧 SystemMessage，确保只有最新的指令
-    filtered_messages = [m for m in state["messages"] if not isinstance(m, SystemMessage)]
-    
-    # 4. 绑定全部工具并调用
+    # 3. 绑定全部工具并调用
     model = DEFAULT_MODEL
     if all_main_tools:
         model = model.bind_tools(all_main_tools)
         
-    response = model.invoke([system_msg] + filtered_messages)
+    response = model.invoke([system_msg] + state["messages"])
     return {"messages": [response]}
 
 

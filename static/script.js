@@ -498,16 +498,17 @@ async function sendMessage() {
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
 
-        let thoughtContainer = null;
-        let accumulatedThought = "";
-        let accumulatedText = "";
-        let responseContainer = null;
-        let currentAIMessageContainer = null;
-
         // 容器栈，用于支持嵌套渲染 (子 Agent)
         const containerStack = [{
+            sub_thread_id: null,
             container: document.getElementById('messages'),
-            subAgentWrapper: null
+            subAgentWrapper: null,
+            currentAIMessageContainer: null,
+            accumulatedThought: "",
+            accumulatedText: "",
+            responseContainer: null,
+            thoughtContainer: null,
+            _pendingTool: null
         }];
 
         while (true) {
@@ -533,14 +534,15 @@ async function sendMessage() {
                         }
 
                         if (jsonData.type === 'step_done') {
-                            if (accumulatedText || accumulatedThought) {
-                                saveMessage('assistant', accumulatedText, accumulatedThought);
+                            const mainLevel = containerStack[0];
+                            if (mainLevel.accumulatedText || mainLevel.accumulatedThought) {
+                                saveMessage('assistant', mainLevel.accumulatedText, mainLevel.accumulatedThought);
                             }
-                            accumulatedText = "";
-                            accumulatedThought = "";
-                            responseContainer = null;
-                            thoughtContainer = null;
-                            currentAIMessageContainer = null;
+                            mainLevel.accumulatedText = "";
+                            mainLevel.accumulatedThought = "";
+                            mainLevel.responseContainer = null;
+                            mainLevel.thoughtContainer = null;
+                            mainLevel.currentAIMessageContainer = null;
                         } else if (jsonData.type === 'error') {
                             addMessage('assistant', `❌ 错误: ${jsonData.data.message || '未知错误'}`);
                         } else if (jsonData.type) {
@@ -554,10 +556,15 @@ async function sendMessage() {
                                 containerStack.push({
                                     sub_thread_id: jsonData.sub_thread_id,
                                     container: content,
-                                    subAgentWrapper: wrapper
+                                    subAgentWrapper: wrapper,
+                                    currentAIMessageContainer: null,
+                                    accumulatedThought: "",
+                                    accumulatedText: "",
+                                    responseContainer: null,
+                                    thoughtContainer: null,
+                                    _pendingTool: null
                                 });
                                 showLoadingIndicator(content);
-                                currentAIMessageContainer = null; // 切换容器，清空当前消息块引用
                                 continue;
                             }
 
@@ -579,7 +586,6 @@ async function sendMessage() {
                                 if (currentLevel) {
                                     showLoadingIndicator(currentLevel.container);
                                 }
-                                currentAIMessageContainer = null; // 切换回父容器，确保下次开启新气泡
                                 continue;
                             }
 
@@ -594,46 +600,50 @@ async function sendMessage() {
                                 renderToolCall({ name: toolStart.name, result: data.result }, toolStart.args, targetLevel.container);
                                 targetLevel._pendingTool = null;
                                 
-                                currentAIMessageContainer = null;
-                                responseContainer = null;
-                                thoughtContainer = null;
+                                targetLevel.currentAIMessageContainer = null;
+                                targetLevel.responseContainer = null;
+                                targetLevel.thoughtContainer = null;
+                                targetLevel.accumulatedThought = "";
+                                targetLevel.accumulatedText = "";
                                 
                                 showLoadingIndicator(targetLevel.container);
                                 continue;
                             }
 
                             // 2. 处理流式内容 (思考和正文)
-                            if (!currentAIMessageContainer && (jsonData.type === 'reasoning' || jsonData.type === 'content')) {
+                            if (!targetLevel.currentAIMessageContainer && (jsonData.type === 'reasoning' || jsonData.type === 'content')) {
                                 hideLoadingIndicator();
-                                currentAIMessageContainer = addMessageComponent('assistant', '', targetLevel.container);
-                                responseContainer = null; // 重置 responseContainer 引用，因为它属于新的消息块
-                                thoughtContainer = null;
+                                targetLevel.currentAIMessageContainer = addMessageComponent('assistant', '', targetLevel.container);
+                                targetLevel.responseContainer = null;
+                                targetLevel.thoughtContainer = null;
+                                targetLevel.accumulatedThought = "";
+                                targetLevel.accumulatedText = "";
                             }
 
                             // 处理思考过程
                             if (jsonData.type === 'reasoning') {
-                                if (!thoughtContainer) {
-                                    thoughtContainer = addMessageComponent('thought', '', currentAIMessageContainer);
+                                if (!targetLevel.thoughtContainer) {
+                                    targetLevel.thoughtContainer = addMessageComponent('thought', '', targetLevel.currentAIMessageContainer);
                                 }
-                                accumulatedThought += data.text || '';
-                                const contentArea = thoughtContainer.querySelector('.thought-content');
-                                contentArea.innerHTML = marked.parse(accumulatedThought);
+                                targetLevel.accumulatedThought += data.text || '';
+                                const contentArea = targetLevel.thoughtContainer.querySelector('.thought-content');
+                                contentArea.innerHTML = marked.parse(targetLevel.accumulatedThought);
                             }
 
                             // 处理正式回复内容
                             if (jsonData.type === 'content') {
-                                if (thoughtContainer && !thoughtContainer.classList.contains('collapsed')) {
-                                    thoughtContainer.classList.add('collapsed');
+                                if (targetLevel.thoughtContainer && !targetLevel.thoughtContainer.classList.contains('collapsed')) {
+                                    targetLevel.thoughtContainer.classList.add('collapsed');
                                 }
-                                if (!responseContainer) {
-                                    responseContainer = currentAIMessageContainer.querySelector('.content-area') || document.createElement('div');
-                                    if (!responseContainer.classList.contains('content-area')) {
-                                        responseContainer.className = 'content-area';
-                                        currentAIMessageContainer.appendChild(responseContainer);
+                                if (!targetLevel.responseContainer) {
+                                    targetLevel.responseContainer = targetLevel.currentAIMessageContainer.querySelector('.content-area') || document.createElement('div');
+                                    if (!targetLevel.responseContainer.classList.contains('content-area')) {
+                                        targetLevel.responseContainer.className = 'content-area';
+                                        targetLevel.currentAIMessageContainer.appendChild(targetLevel.responseContainer);
                                     }
                                 }
-                                accumulatedText += data.text || '';
-                                responseContainer.innerHTML = marked.parse(accumulatedText);
+                                targetLevel.accumulatedText += data.text || '';
+                                targetLevel.responseContainer.innerHTML = marked.parse(targetLevel.accumulatedText);
                             }
 
                             // 统一滚动到底部
@@ -647,8 +657,9 @@ async function sendMessage() {
             }
         }
 
-        if (accumulatedText || accumulatedThought) {
-            saveMessage('assistant', accumulatedText, accumulatedThought);
+        const mainLevel = containerStack[0];
+        if (mainLevel.accumulatedText || mainLevel.accumulatedThought) {
+            saveMessage('assistant', mainLevel.accumulatedText, mainLevel.accumulatedThought);
         }
 
         if (!conversations[currentConversationId].title || conversations[currentConversationId].title === '新会话') {
