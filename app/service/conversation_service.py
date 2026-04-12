@@ -3,7 +3,7 @@ import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
-from sqlalchemy import select, delete, desc, asc, update
+from sqlalchemy import select, delete, desc, asc, update, and_, or_
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 
@@ -82,16 +82,30 @@ async def update_message_content(conversation_id: str, tool_call_id: str, conten
         
         return result.rowcount > 0
 
-async def get_messages(conversation_id: str, thread_id: str = None) -> list[BaseMessage]:
+async def get_messages(conversation_id: str) -> list[BaseMessage]:
     """
-    Read messages for a specific thread from DB and convert to LangChain objects.
+    Read the main-thread messages for a conversation and convert them to
+    LangChain objects.
     """
     async with get_session() as session:
-        if thread_id:
-            stmt = select(Message).where(Message.conversation_id == conversation_id, Message.sub_thread_id == thread_id, Message.role.in_(["human", "ai"])).order_by(asc(Message.created_at))
-        else:
-            # Main thread messages: sub_thread_id specifies its thread location. None means main thread
-            stmt = select(Message).where(Message.conversation_id == conversation_id, Message.sub_thread_id.is_(None)).order_by(asc(Message.created_at))
+        # Main thread history includes normal top-level messages plus the
+        # sub_task tool anchor message. That anchor stores the spawned
+        # sub-thread id in sub_thread_id, but still belongs to the main thread.
+        stmt = (
+            select(Message)
+            .where(
+                Message.conversation_id == conversation_id,
+                or_(
+                    Message.sub_thread_id.is_(None),
+                    and_(
+                        Message.role == "tool",
+                        Message.tool_name == "sub_task",
+                        Message.sub_thread_id.is_not(None)
+                    )
+                )
+            )
+            .order_by(asc(Message.created_at))
+        )
             
         result = await session.execute(stmt)
         db_msgs = result.scalars().all()
@@ -107,7 +121,7 @@ async def get_messages(conversation_id: str, thread_id: str = None) -> list[Base
             langchain_msgs.append(AIMessage(content=db_m.content, tool_calls=db_m.tool_calls or [], additional_kwargs=kwargs))
         elif db_m.role == "tool":
             kwargs = {}
-            if db_m.sub_thread_id: # meaning this tool SPAWNED a sub_thread, but it itself belongs to main thread
+            if db_m.sub_thread_id:
                 kwargs["sub_thread_id"] = db_m.sub_thread_id
             langchain_msgs.append(ToolMessage(
                 name=db_m.tool_name or "",
@@ -276,4 +290,3 @@ async def delete_conversation(conversation_id: str) -> bool:
     except Exception as e:
         logger.error(f"Failed to delete conversation {conversation_id}: {e}")
         return False
-
