@@ -70,10 +70,16 @@ def create_sub_task_tool(all_tools: List[Any]) -> StructuredTool:
         parent_thread_id = config["configurable"]["thread_id"]
         # 使用基于 tool_call_id 的确定性子线程 ID
         sub_thread_id = f"{parent_thread_id}:{tool_call_id}"
+        parent_sub_thread_id = config.get("metadata", {}).get("sub_thread_id")
         
         sub_config = {
             "configurable": {"thread_id": sub_thread_id},
-            "callbacks": config.get("callbacks", [])
+            "callbacks": config.get("callbacks", []),
+            "metadata": {
+                **config.get("metadata", {}),
+                "sub_thread_id": sub_thread_id,
+                "parent_sub_thread_id": parent_sub_thread_id
+            }
         }
         
         # 将背景和任务合并

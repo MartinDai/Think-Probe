@@ -54,9 +54,24 @@ async def process_message(message: str, context: ConversationContext):
 
         graph = workflow.compile()
         
-        current_sub_thread_id = None
         pending_tool_calls = {} # name -> list[id]
         running_tool_calls = {} # run_id -> id
+        sub_task_run_threads = {} # run_id -> sub_thread_id
+
+        def resolve_sub_thread_id(event: dict) -> str | None:
+            metadata = event.get("metadata") or {}
+            metadata_sub_thread_id = metadata.get("sub_thread_id")
+            if metadata_sub_thread_id:
+                return metadata_sub_thread_id
+
+            direct_run_id = event.get("run_id")
+            if direct_run_id in sub_task_run_threads:
+                return sub_task_run_threads[direct_run_id]
+
+            for parent_run_id in reversed(event.get("parent_ids", [])):
+                if parent_run_id in sub_task_run_threads:
+                    return sub_task_run_threads[parent_run_id]
+            return None
         
         async for event in graph.astream_events(inputs, config=config, version="v2", name=trace_name):
             kind = event["event"]
@@ -69,6 +84,7 @@ async def process_message(message: str, context: ConversationContext):
             if kind == "on_chat_model_stream":
                 chunk = event["data"]["chunk"]
                 content = chunk.content if hasattr(chunk, "content") else ""
+                event_sub_thread_id = resolve_sub_thread_id(event)
                 # 适配某些模型可能将思考过程放在不同字段的情况
                 reasoning = ""
                 if hasattr(chunk, "additional_kwargs") and "reasoning_content" in chunk.additional_kwargs:
@@ -80,9 +96,9 @@ async def process_message(message: str, context: ConversationContext):
                     continue
                 
                 if reasoning:
-                    yield SSEBuilder.reasoning(reasoning, sub_thread_id=current_sub_thread_id)
+                    yield SSEBuilder.reasoning(reasoning, sub_thread_id=event_sub_thread_id)
                 if content:
-                    yield SSEBuilder.content(content, sub_thread_id=current_sub_thread_id)
+                    yield SSEBuilder.content(content, sub_thread_id=event_sub_thread_id)
 
             elif kind == "on_chat_model_end":
                 msg = event["data"].get("output")
@@ -99,13 +115,15 @@ async def process_message(message: str, context: ConversationContext):
                                 pending_tool_calls[name] = []
                             pending_tool_calls[name].append(tc['id'])
                     
+                    event_sub_thread_id = resolve_sub_thread_id(event)
+
                     # Save AI response to DB
-                    if current_sub_thread_id:
+                    if event_sub_thread_id:
                         # 实时落库子代理的消息
                         await conversation_service.save_message(
                             conversation_id, "ai", content, tool_calls, 
                             reasoning_content=reasoning_content,
-                            sub_thread_id=current_sub_thread_id
+                            sub_thread_id=event_sub_thread_id
                         )
                     else:
                         # 主代理的消息，直接入库
@@ -116,6 +134,7 @@ async def process_message(message: str, context: ConversationContext):
             elif kind == "on_tool_start":
                 tool_name = event["name"]
                 tool_args = event["data"].get("input", {})
+                parent_sub_thread_id = resolve_sub_thread_id(event)
                 
                 # 为当前工具提取或生成唯一的 tool_call_id
                 tool_ids = pending_tool_calls.get(tool_name, [])
@@ -124,19 +143,21 @@ async def process_message(message: str, context: ConversationContext):
 
                 if tool_name == "sub_task":
                     # 直接生成子线程 ID
-                    current_sub_thread_id = f"{conversation_id}:{actual_tool_id}"
+                    sub_thread_id = f"{conversation_id}:{actual_tool_id}"
+                    sub_task_run_threads[event.get("run_id")] = sub_thread_id
                     
                     # 发送子代理开始信号
                     yield SSEBuilder.sub_agent_start(
                         task=tool_args.get("task", "") or "执行子任务",
-                        sub_thread_id=current_sub_thread_id
+                        sub_thread_id=sub_thread_id,
+                        parent_sub_thread_id=parent_sub_thread_id
                     )
                 else:
                     # 普通工具开始
                     yield SSEBuilder.tool_start(
                         name=tool_name, 
                         args=tool_args, 
-                        sub_thread_id=current_sub_thread_id
+                        sub_thread_id=parent_sub_thread_id
                     )
 
             elif kind == "on_tool_end":
@@ -153,27 +174,28 @@ async def process_message(message: str, context: ConversationContext):
                 actual_tool_call_id = running_tool_calls.pop(event.get("run_id"), event.get("run_id"))
                 
                 if tool_name == "sub_task":
+                    sub_thread_id = sub_task_run_threads.pop(event.get("run_id"), None)
                     # 对于子代理大工具，把结果存入主线程 (ToolMessage)
                     await conversation_service.save_message(
                         conversation_id, "tool", str(display_content),
-                        tool_name=tool_name, tool_call_id=actual_tool_call_id, sub_thread_id=current_sub_thread_id
+                        tool_name=tool_name, tool_call_id=actual_tool_call_id, sub_thread_id=sub_thread_id
                     )
                     
                     # 子代理执行结束
                     yield SSEBuilder.sub_agent_end(
                         result=str(display_content),
-                        sub_thread_id=current_sub_thread_id
+                        sub_thread_id=sub_thread_id
                     )
-                    current_sub_thread_id = None
                 else:
+                    event_sub_thread_id = resolve_sub_thread_id(event)
                     # Save common tool result to DB
-                    if current_sub_thread_id:
+                    if event_sub_thread_id:
                         # 子代理调用的工具，实时落库
                         await conversation_service.save_message(
                             conversation_id, "tool", str(display_content),
                             tool_name=tool_name, 
                             tool_call_id=actual_tool_call_id,
-                            sub_thread_id=current_sub_thread_id
+                            sub_thread_id=event_sub_thread_id
                         )
                     else:
                         # 主代理调用的工具，直接落库
@@ -186,7 +208,7 @@ async def process_message(message: str, context: ConversationContext):
                     yield SSEBuilder.tool_end(
                         name=tool_name, 
                         result=str(display_content), 
-                        sub_thread_id=current_sub_thread_id
+                        sub_thread_id=event_sub_thread_id
                     )
 
             # --- Step Done Marker ---

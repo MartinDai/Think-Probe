@@ -28,9 +28,15 @@ class SSEBuilder:
         return SSEBuilder._build("tool_end", {"name": name, "result": result}, sub_thread_id)
 
     @staticmethod
-    def sub_agent_start(task: str, sub_thread_id: Optional[str] = None) -> str:
-        # 移除了 name 参数，只传 task
-        return SSEBuilder._build("sub_agent_start", {"task": task}, sub_thread_id)
+    def sub_agent_start(
+        task: str,
+        sub_thread_id: Optional[str] = None,
+        parent_sub_thread_id: Optional[str] = None
+    ) -> str:
+        payload = {"task": task}
+        if parent_sub_thread_id is not None:
+            payload["parent_sub_thread_id"] = parent_sub_thread_id
+        return SSEBuilder._build("sub_agent_start", payload, sub_thread_id)
 
     @staticmethod
     def sub_agent_end(result: str, sub_thread_id: Optional[str] = None) -> str:

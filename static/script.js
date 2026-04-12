@@ -551,8 +551,13 @@ async function sendMessage() {
                             // 1. 处理结构化事件 (子 Agent 开始/结束，工具开始/结束)
                             if (jsonData.type === 'sub_agent_start') {
                                 hideLoadingIndicator();
-                                // 名称不再重要，使用统一标题。传入 sub_thread_id 以便追踪。
-                                const { wrapper, content } = createSubAgentWrapper("执行子任务", data.task, targetLevel.container);
+                                const parentSubThreadId = data.parent_sub_thread_id || null;
+                                const parentLevel = parentSubThreadId
+                                    ? containerStack.find(l => l.sub_thread_id === parentSubThreadId) || containerStack[0]
+                                    : containerStack[0];
+
+                                // 子任务容器挂到显式父线程下，而不是当前栈顶。
+                                const { wrapper, content } = createSubAgentWrapper("执行子任务", data.task, parentLevel.container);
                                 containerStack.push({
                                     sub_thread_id: jsonData.sub_thread_id,
                                     container: content,
