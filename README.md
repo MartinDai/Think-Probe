@@ -11,9 +11,10 @@ Think-Probe 是一个基于 LLM 的轻量级自主编程智能体，旨在展示
 - **ReAct 循环**：`Observe → Plan → Act → Verify` 标准化工作流，确保每步可验证。
 - **通用子任务委派**：参考 Claude Code 的 `sub_task` 模式，支持主代理动态发起专家级子任务，子代理具备独立执行、深度分析和结果汇总能力。
 - **任务追踪**：对复杂任务自动维护 `task.md` 进度文件，支持长任务的断点续跑。
+- **扩展技能系统 (Skill System)**：支持通过极简 Markdown（`SKILL.md`）定义复杂技能，Agent 可动态发现并查阅执行指南。
 
 ### 🛠️ 工具体系
-内置 8 个沙箱化原生工具，遵循 **专用优先** 原则和 `What + When + Why Not` 描述规范：
+内置 9 个沙箱化原生工具，遵循 **专用优先** 原则和 `What + When + Why Not` 描述规范：
 
 | 工具 | 职责 |
 | :--- | :--- |
@@ -25,6 +26,7 @@ Think-Probe 是一个基于 LLM 的轻量级自主编程智能体，旨在展示
 | `grep_search` | 文本/正则搜索，快速定位代码 |
 | `bash` | 沙箱 Shell 执行，持久 CWD |
 | `sub_task` | 专家级子任务委派（动态生成子代理） |
+| `get_skill_info` | 获取扩展技能（Skill）的详细操作正文 |
 
 ### 🔒 安全沙箱
 - 每个会话拥有独立的隔离工作空间（`.workspace/{session_id}/`）
@@ -136,7 +138,9 @@ app/
 ├── core/               # 核心架构
 │   ├── graph.py        # LangGraph 状态机与工具注册
 │   ├── llm.py          # LLM 配置与自定义模型
-│   └── agent_factory.py # 子智能体动态工厂
+│   ├── agent_factory.py # 子智能体动态工厂
+│   └── skill_manager.py # 技能加载与查询核心逻辑
+├── skills/             # 扩展技能库
 ├── tools/              # 沙箱化工具集
 │   ├── file_editor.py  # 文件读写/编辑/删除
 │   ├── search.py       # 目录浏览与文本搜索
