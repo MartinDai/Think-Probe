@@ -6,10 +6,10 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END, add_messages
 from langgraph.prebuilt import ToolNode
 
-from app.agents.main import main_agent
+from app.agents.main import main_agent, get_main_agent_instructions
 from app.core.llm import DEFAULT_MODEL
 from app.core.agent_factory import create_sub_task_tool
-from app.tools.terminal import WORKSPACE_BASE
+from app.tools.terminal import get_workspace_dir
 # --- State Definition ---
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
@@ -29,9 +29,9 @@ all_main_tools = [sub_task_tool] + base_tools
 def call_main_model(state: AgentState, config: RunnableConfig):
     # 1. 读取工作空间中的任务进度（如果存在）
     thread_id = config.get("configurable", {}).get("thread_id", "unknown")
-    workspace_dir = WORKSPACE_BASE / thread_id
+    workspace_dir = get_workspace_dir(thread_id)
 
-    instructions = main_agent.instructions
+    instructions = get_main_agent_instructions()
 
     # 2. 注入任务进度上下文
     task_file = workspace_dir / "task.md"

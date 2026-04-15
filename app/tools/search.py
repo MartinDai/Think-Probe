@@ -3,20 +3,22 @@ import subprocess
 from pathlib import Path
 from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
-from app.tools.terminal import get_workspace_dir
+from app.tools.terminal import get_workspace_dir, get_last_cwd
 
 
-def _validate_path(workspace_dir: Path, rel_path: str) -> Path:
-    """校验路径安全性并返回绝对路径，仅允许相对路径"""
+def _validate_path(workspace_dir: Path, thread_id: str, rel_path: str) -> Path:
+    """校验路径安全性并返回绝对路径，仅允许项目工作区内的相对路径"""
     if rel_path.startswith("/") or rel_path.startswith("\\"):
         raise ValueError("Security Error: 不允许使用绝对路径。请使用相对路径。")
 
     if ".." in rel_path:
         raise ValueError("Security Error: 路径中不允许包含 '..'。")
 
-    target = (workspace_dir / rel_path).resolve()
+    current_rel_cwd = get_last_cwd(thread_id)
+    actual_cwd = (workspace_dir / current_rel_cwd).resolve()
+    target = (actual_cwd / rel_path).resolve()
     if not str(target).startswith(str(workspace_dir.resolve())):
-        raise ValueError("Security Error: 禁止访问工作空间外部路径。")
+        raise ValueError("Security Error: 禁止访问项目工作区外部路径。")
 
     return target
 
@@ -33,7 +35,7 @@ def _get_thread_id(config: RunnableConfig) -> str:
 ))
 def list_dir(path: str, config: RunnableConfig) -> str:
     """
-    列出工作空间内指定目录的内容。
+    列出项目工作区内指定目录的内容。
 
     Args:
         path (str): 目录路径。必须使用【相对路径】（相对于当前工作目录）。禁止以 '/' 开头。使用 "." 表示当前目录。
@@ -42,7 +44,7 @@ def list_dir(path: str, config: RunnableConfig) -> str:
     workspace_dir = get_workspace_dir(thread_id)
 
     try:
-        target = _validate_path(workspace_dir, path)
+        target = _validate_path(workspace_dir, thread_id, path)
 
         if not target.exists():
             return f"Error: 路径 '{path}' 不存在。"
@@ -97,7 +99,7 @@ def grep_search(
     ignore_case: bool = False
 ) -> str:
     """
-    在工作空间内搜索与给定文本模式匹配的内容。
+    在项目工作区内搜索与给定文本模式匹配的内容。
 
     Args:
         pattern (str): 搜索模式，支持正则表达式（如 'def .*init' 或 'TODO'）。
@@ -109,7 +111,7 @@ def grep_search(
     workspace_dir = get_workspace_dir(thread_id)
 
     try:
-        target = _validate_path(workspace_dir, path)
+        target = _validate_path(workspace_dir, thread_id, path)
 
         if not target.exists():
             return f"Error: 路径 '{path}' 不存在。"

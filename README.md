@@ -14,7 +14,7 @@ Think-Probe 是一个基于 LLM 的轻量级自主编程智能体，旨在展示
 - **扩展技能系统 (Skill System)**：支持通过极简 Markdown（`SKILL.md`）定义复杂技能，Agent 可动态发现并查阅执行指南。
 
 ### 🛠️ 工具体系
-内置 9 个沙箱化原生工具，遵循 **专用优先** 原则和 `What + When + Why Not` 描述规范：
+内置多组沙箱化原生工具，遵循 **专用优先** 原则和 `What + When + Why Not` 描述规范：
 
 | 工具 | 职责 |
 | :--- | :--- |
@@ -27,11 +27,24 @@ Think-Probe 是一个基于 LLM 的轻量级自主编程智能体，旨在展示
 | `bash` | 沙箱 Shell 执行，持久 CWD |
 | `sub_task` | 专家级子任务委派（动态生成子代理） |
 | `get_skill_info` | 获取扩展技能（Skill）的详细操作正文 |
+| `search_skills` | 搜索已安装技能和远程 ClawHub 中可安装的技能 |
+| `install_skill` | 按 ClawHub slug 从远程安装技能 |
+| `update_skill` | 根据 ClawHub 安装记录更新技能 |
+| `remove_skill` | 删除已安装技能 |
+| `reload_skills` | 重新扫描技能目录 |
+| `list_skill_sources` | 查看默认技能目录和远程 ClawHub 来源 |
 
 ### 🔒 安全沙箱
-- 每个会话拥有独立的隔离工作空间（`.workspace/{session_id}/`）
+- 工具访问范围限制在当前项目根目录内；会话元数据保存在 `.workspace/{session_id}/`
 - 路径穿越防护（`..` 禁止、绝对路径校验）
+- `bash` 支持在项目根下的默认 `skills/` 目录安装新 skill，并执行 skill 目录中的脚本
 - 命令执行超时保护
+
+### 🧩 Skill 管理
+- 只保留项目根目录下的默认技能目录：`skills/`
+- 默认远程源为 ClawHub：`https://clawhub.ai`
+- 模型通过专用工具直接请求 ClawHub API 搜索技能，并从技能页下载 zip 包进行安装；所有安装和更新都落到 `skills/`
+- `SKILL.md` 支持 `requires.bins`、`requires.env`、`requires.python_modules` 等元数据，用于判断技能是否可立即执行
 
 ### 🌊 实时交互
 - **深度思考可视化**：支持展示 LLM 的 `reasoning_content`（思考链），AI 决策过程不再是"黑盒"

@@ -8,21 +8,27 @@ from langchain_core.runnables import RunnableConfig
 # 获取项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
 WORKSPACE_BASE = PROJECT_ROOT / ".workspace"
+SANDBOX_ROOT = PROJECT_ROOT
 
-def get_workspace_dir(thread_id: str) -> Path:
-    """获取并确保会话专用的工作空间目录存在"""
+def get_session_dir(thread_id: str) -> Path:
+    """获取并确保会话专用的元数据目录存在"""
     path = WORKSPACE_BASE / thread_id
     if not path.exists():
         path.mkdir(parents=True, exist_ok=True)
     return path
 
-def get_state_file(workspace_dir: Path) -> Path:
-    """获取会话专用的状态文件路径"""
-    return workspace_dir / ".terminal_state"
+def get_workspace_dir(thread_id: str) -> Path:
+    """返回可供工具访问的项目级工作区根目录"""
+    get_session_dir(thread_id)
+    return SANDBOX_ROOT
 
-def get_last_cwd(workspace_dir: Path) -> str:
-    """读取会话专用的工作目录（相对路径）"""
-    state_file = get_state_file(workspace_dir)
+def get_state_file(thread_id: str) -> Path:
+    """获取会话专用的终端状态文件路径"""
+    return get_session_dir(thread_id) / ".terminal_state"
+
+def get_last_cwd(thread_id: str) -> str:
+    """读取会话专用的工作目录（相对 sandbox_root 的路径）"""
+    state_file = get_state_file(thread_id)
     if not state_file.exists():
         return "."
     try:
@@ -32,35 +38,36 @@ def get_last_cwd(workspace_dir: Path) -> str:
     except Exception:
         return "."
 
-def save_cwd(workspace_dir: Path, abs_path: Path):
-    """验证并保存会话专用的工作目录（相对于 workspace_dir 的路径）"""
+def save_cwd(thread_id: str, abs_path: Path):
+    """验证并保存会话专用的工作目录（相对于 sandbox_root 的路径）"""
     try:
         resolved_path = abs_path.resolve()
-        workspace_resolved = workspace_dir.resolve()
+        sandbox_resolved = SANDBOX_ROOT.resolve()
         
-        # 严格检查新路径是否在会话的工作空间内部
-        if str(resolved_path).startswith(str(workspace_resolved)):
-            rel_path = os.path.relpath(resolved_path, workspace_resolved)
-            with open(get_state_file(workspace_dir), "w") as f:
+        # 严格检查新路径是否在项目沙箱内部
+        if str(resolved_path).startswith(str(sandbox_resolved)):
+            rel_path = os.path.relpath(resolved_path, sandbox_resolved)
+            with open(get_state_file(thread_id), "w") as f:
                 f.write(rel_path)
             return True
         else:
-            # 逃离尝试：重置回会话根目录
-            with open(get_state_file(workspace_dir), "w") as f:
+            # 逃离尝试：重置回项目根目录
+            with open(get_state_file(thread_id), "w") as f:
                 f.write(".")
             return False
     except Exception:
         return False
 
 @tool(description=(
-    "在隔离的沙箱工作空间中执行 Shell 命令。环境具备持久 CWD。"
+    "在项目沙箱内执行 Shell 命令。环境具备按会话持久化的 CWD。"
     "适用于：运行构建系统、包管理器(pip/npm)、Git 操作、测试执行、服务启动等没有专用工具的系统任务。"
     "不适用于：读取文件(用 read_file)、搜索代码(用 grep_search)、浏览目录(用 list_dir)、编辑文件(用 edit_file)。"
-    "安全规则：严禁使用 '..' 或工作空间外的绝对路径。"
+    "安全规则：严禁使用 '..' 或项目根目录外的绝对路径。"
+    "你可以访问项目根下的 `skills/` 目录，并在其中创建 skill、安装文件、执行脚本。"
 ))
 def bash(command: str, config: RunnableConfig) -> str:
     """
-    运行 shell 命令。命令会在会话特定的沙盒路径下执行。
+    运行 shell 命令。命令会在项目根目录下执行，并为每个会话持久化当前目录。
     
     Args:
         command (str): 完整的 shell 命令字符串 (例如 'ls -R', 'python3 app.py')。
@@ -78,16 +85,16 @@ def bash(command: str, config: RunnableConfig) -> str:
     parts = command.split()
     for part in parts:
         if part.startswith("/") and not part.startswith(str(workspace_dir)):
-             return f"Error: Access to absolute paths outside the session workspace is prohibited: {part}"
+             return f"Error: Access to absolute paths outside the project workspace is prohibited: {part}"
 
     # --- 准备执行 ---
-    start_rel_cwd = get_last_cwd(workspace_dir)
+    start_rel_cwd = get_last_cwd(thread_id)
     actual_cwd = (workspace_dir / start_rel_cwd).resolve()
     
     # 兜底检查实际 cwd 是否安全
     if not str(actual_cwd).startswith(str(workspace_dir.resolve())):
         actual_cwd = workspace_dir.resolve()
-        save_cwd(workspace_dir, actual_cwd)
+        save_cwd(thread_id, actual_cwd)
 
     # 构建命令：执行命令后获取当前路径
     wrapped_command = f"({command}) && pwd || pwd"
@@ -110,10 +117,10 @@ def bash(command: str, config: RunnableConfig) -> str:
         cleaned_stdout = "\n".join(stdout_lines[:-1]) if len(stdout_lines) > 1 else ""
         
         # 验证新路径并更新状态
-        if not save_cwd(workspace_dir, Path(new_path_str)):
+        if not save_cwd(thread_id, Path(new_path_str)):
             return "Error: Session sandbox violation detected. Operation aborted."
 
-        current_rel_path = get_last_cwd(workspace_dir)
+        current_rel_path = get_last_cwd(thread_id)
         
         response = [
             f"Status: {'Success' if result.returncode == 0 else 'Failed'}",
