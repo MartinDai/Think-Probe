@@ -1,9 +1,13 @@
 let currentConversationId = null;
 let conversations = {};
+let installedSkills = [];
 let isRequestLoading = false;
 let currentAbortController = null;
 let currentLoadingIndicator = null;
 let autoScrollEnabled = true;
+let currentSidebarView = 'chat';
+let isMenuSidebarCollapsed = false;
+let currentSkillDetail = null;
 
 function scrollToBottom(force = false) {
     const messagesDiv = document.getElementById('messages');
@@ -55,6 +59,7 @@ function getFormattedTimestamp() {
 }
 
 function newConversation() {
+    switchSidebarView('chat');
     currentConversationId = 'conv_' + getFormattedTimestamp();
     conversations[currentConversationId] = {
         messages: [],
@@ -66,6 +71,35 @@ function newConversation() {
     document.getElementById('messages').innerHTML = '';
     updateConversationList();
     updateNewSessionUI(true);
+}
+
+function switchSidebarView(view) {
+    currentSidebarView = view;
+
+    document.querySelectorAll('.nav-item').forEach((item) => {
+        item.classList.toggle('active', item.dataset.view === view);
+    });
+
+    document.getElementById('chat-workspace').classList.toggle('active', view === 'chat');
+    document.getElementById('skills-workspace').classList.toggle('active', view === 'skills');
+
+    if (view === 'skills') {
+        loadSkills();
+    }
+
+    lucide.createIcons();
+}
+
+function toggleMenuSidebar() {
+    isMenuSidebarCollapsed = !isMenuSidebarCollapsed;
+    document.body.classList.toggle('sidebar-collapsed', isMenuSidebarCollapsed);
+
+    const toggleIcon = document.querySelector('.menu-toggle i');
+    if (toggleIcon) {
+        toggleIcon.setAttribute('data-lucide', isMenuSidebarCollapsed ? 'panel-left-open' : 'panel-left-close');
+    }
+
+    lucide.createIcons();
 }
 
 async function editConversationTitle() {
@@ -90,6 +124,7 @@ async function editConversationTitle() {
 }
 
 async function loadConversation(convId) {
+    switchSidebarView('chat');
     currentConversationId = convId;
     const messagesDiv = document.getElementById('messages');
     messagesDiv.innerHTML = '<div style="padding: 20px; color: #666; text-align: center;">加载中...</div>';
@@ -125,6 +160,133 @@ async function loadConversation(convId) {
     setTimeout(() => {
         scrollToBottom(true);
     }, 50);
+}
+
+function renderSkillsList() {
+    const listDiv = document.getElementById('skills-list');
+    if (!listDiv) return;
+
+    listDiv.innerHTML = '';
+
+    if (!installedSkills.length) {
+        const emptyState = document.createElement('div');
+        emptyState.className = 'sidebar-empty-state';
+        emptyState.innerHTML = `
+            <i data-lucide="blocks"></i>
+            <h3>暂无已安装 Skills</h3>
+            <p>当前项目的 \`skills/\` 目录下还没有可用技能。</p>
+        `;
+        listDiv.appendChild(emptyState);
+        lucide.createIcons();
+        return;
+    }
+
+    installedSkills.forEach((skill) => {
+        const skillItem = document.createElement('div');
+        skillItem.className = 'skill-item';
+        skillItem.onclick = () => openSkillPreview(skill.name);
+
+        const tags = (skill.tags || []).map((tag) => `<span class="skill-tag">${tag}</span>`).join('');
+        const version = skill.version ? `<span class="skill-version">v${skill.version}</span>` : '';
+        const source = skill.source ? `<div class="skill-meta-row">来源: ${skill.source}</div>` : '';
+
+        skillItem.innerHTML = `
+            <div class="skill-item-header">
+                <div class="skill-title-row">
+                    <i data-lucide="sparkles"></i>
+                    <span class="skill-name">${skill.name}</span>
+                </div>
+                ${version}
+            </div>
+            <p class="skill-description">${skill.description || '暂无描述'}</p>
+            <div class="skill-meta-row">目录: <code>${skill.path}</code></div>
+            ${source}
+            ${tags ? `<div class="skill-tags">${tags}</div>` : ''}
+        `;
+        listDiv.appendChild(skillItem);
+    });
+
+    lucide.createIcons();
+}
+
+async function openSkillPreview(skillName) {
+    const modal = document.getElementById('skill-preview-modal');
+    const title = document.getElementById('skill-preview-title');
+    const meta = document.getElementById('skill-preview-meta');
+    const content = document.getElementById('skill-preview-content');
+
+    title.textContent = skillName;
+    meta.textContent = '加载中...';
+    content.innerHTML = '<div class="sidebar-loading">正在加载 SKILL.md 内容...</div>';
+    modal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+
+    try {
+        const response = await fetch(`/api/skills/${encodeURIComponent(skillName)}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        currentSkillDetail = await response.json();
+        title.textContent = currentSkillDetail.name;
+
+        const metaParts = [
+            currentSkillDetail.version ? `v${currentSkillDetail.version}` : null,
+            currentSkillDetail.path || null,
+        ].filter(Boolean);
+        meta.textContent = metaParts.join(' · ');
+        content.innerHTML = marked.parse(currentSkillDetail.instructions || '_暂无内容_');
+    } catch (e) {
+        console.error("加载 skill 详情失败", e);
+        meta.textContent = '';
+        content.innerHTML = `<div class="sidebar-loading">加载失败: ${e.message}</div>`;
+    }
+
+    lucide.createIcons();
+}
+
+function closeSkillPreview(event = null) {
+    if (event && event.target !== event.currentTarget) {
+        return;
+    }
+
+    const modal = document.getElementById('skill-preview-modal');
+    modal.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+    currentSkillDetail = null;
+}
+
+async function loadSkills(forceRefresh = false) {
+    const listDiv = document.getElementById('skills-list');
+    if (!listDiv) return;
+
+    if (!forceRefresh && installedSkills.length > 0) {
+        renderSkillsList();
+        return;
+    }
+
+    listDiv.innerHTML = '<div class="sidebar-loading">加载 skills 中...</div>';
+
+    try {
+        const response = await fetch('/api/skills');
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        installedSkills = data.skills || [];
+        renderSkillsList();
+    } catch (e) {
+        console.error("加载 skills 列表失败", e);
+        listDiv.innerHTML = `
+            <div class="sidebar-empty-state">
+                <i data-lucide="triangle-alert"></i>
+                <h3>Skills 加载失败</h3>
+                <p>${e.message}</p>
+            </div>
+        `;
+        lucide.createIcons();
+    }
 }
 
 
@@ -798,10 +960,18 @@ document.getElementById('message-input').addEventListener('input', function () {
     }
 });
 
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        closeSkillPreview();
+    }
+});
+
 lucide.createIcons();
 async function initApp() {
     await updateConversationList();
+    await loadSkills();
     updateNewSessionUI(true);
+    switchSidebarView('chat');
 
     const messagesDiv = document.getElementById('messages');
     const scrollTopBtn = document.getElementById('scroll-top-btn');

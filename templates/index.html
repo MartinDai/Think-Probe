@@ -10,48 +10,100 @@
 
 <body>
     <div class="container">
-        <div class="sidebar">
-            <div class="sidebar-header">
-                <div class="logo-area"
-                    style="padding: 10px 0 20px 0; color: var(--accent-cyan); display: flex; align-items: center; gap: 8px;">
+        <aside id="menu-sidebar" class="menu-sidebar">
+            <div class="menu-sidebar-top">
+                <div class="logo-area">
                     <i data-lucide="brain-circuit" style="width: 24px; height: 24px;"></i>
-                    <span style="font-weight: 800; font-size: 18px; letter-spacing: 1px;">THINK PROBE</span>
+                    <span class="logo-text">THINK PROBE</span>
                 </div>
-                <button onclick="newConversation()">
-                    <i data-lucide="plus"
-                        style="width: 16px; height: 16px; display: inline-block; vertical-align: middle; margin-right: 4px;"></i>
-                    新建会话
+                <button class="menu-toggle" onclick="toggleMenuSidebar()" title="收起菜单栏">
+                    <i data-lucide="panel-left-close"></i>
                 </button>
             </div>
-            <div id="conversation-list"></div>
-        </div>
-        <div class="main">
-            <div class="chat-header">
-                <h1 id="conversation-title" onclick="editConversationTitle()">新会话</h1>
-                <span id="conversation-id"></span>
-            </div>
-            <div id="chat-container" class="new-session">
-                <div id="welcome-screen">
-                    <i data-lucide="brain-circuit" style="width: 64px; height: 64px;"></i>
-                    <h1>今天想研究点什么？</h1>
-                </div>
-                <div id="messages"></div>
-                <button id="scroll-top-btn" class="scroll-btn hidden" onclick="scrollToTop()">
-                    <i data-lucide="chevron-up"></i>
+            <div class="sidebar-nav">
+                <button class="nav-item active" data-view="chat" onclick="switchSidebarView('chat')" title="聊天">
+                    <i data-lucide="message-square"></i>
+                    <span>聊天</span>
                 </button>
-
-                <div class="input-area">
-                    <div class="input-wrapper">
-                        <div id="message-input" contenteditable="true" placeholder="请输入您的问题" onkeydown="handleEnter(event)"></div>
-                        <button onclick="stopMessage()" id="stop-button" class="hidden">
-                            <i data-lucide="square" style="fill: currentColor;"></i>
-                        </button>
-                        <button onclick="sendMessage()" id="send-button">
-                            <i data-lucide="arrow-up"></i>
+                <button class="nav-item" data-view="skills" onclick="switchSidebarView('skills')" title="Skills 管理">
+                    <i data-lucide="blocks"></i>
+                    <span>Skills 管理</span>
+                </button>
+            </div>
+        </aside>
+        <div class="workspace">
+            <section id="chat-workspace" class="feature-workspace active">
+                <aside class="feature-panel">
+                    <div class="feature-panel-header">
+                        <div class="feature-panel-title">会话列表</div>
+                        <button onclick="newConversation()">
+                            <i data-lucide="plus"
+                                style="width: 16px; height: 16px; display: inline-block; vertical-align: middle; margin-right: 4px;"></i>
+                            新建会话
                         </button>
                     </div>
+                    <div id="conversation-list"></div>
+                </aside>
+                <div class="main">
+                    <div class="chat-header">
+                        <h1 id="conversation-title" onclick="editConversationTitle()">新会话</h1>
+                        <span id="conversation-id"></span>
+                    </div>
+                    <div id="chat-container" class="new-session">
+                        <div id="welcome-screen">
+                            <i data-lucide="brain-circuit" style="width: 64px; height: 64px;"></i>
+                            <h1>今天想研究点什么？</h1>
+                        </div>
+                        <div id="messages"></div>
+                        <button id="scroll-top-btn" class="scroll-btn hidden" onclick="scrollToTop()">
+                            <i data-lucide="chevron-up"></i>
+                        </button>
+
+                        <div class="input-area">
+                            <div class="input-wrapper">
+                                <div id="message-input" contenteditable="true" placeholder="请输入您的问题" onkeydown="handleEnter(event)"></div>
+                                <button onclick="stopMessage()" id="stop-button" class="hidden">
+                                    <i data-lucide="square" style="fill: currentColor;"></i>
+                                </button>
+                                <button onclick="sendMessage()" id="send-button">
+                                    <i data-lucide="arrow-up"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+            </section>
+
+            <section id="skills-workspace" class="feature-workspace">
+                <div class="skills-page">
+                    <div class="page-header">
+                        <div>
+                            <h1>Skills 管理</h1>
+                            <p>查看当前项目已安装的 skills。</p>
+                        </div>
+                        <button class="icon-button refresh-button" onclick="loadSkills(true)" title="刷新 Skills">
+                            <i data-lucide="refresh-cw"></i>
+                            <span>刷新</span>
+                        </button>
+                    </div>
+                    <div id="skills-list" class="skills-page-list"></div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div id="skill-preview-modal" class="modal-overlay hidden" onclick="closeSkillPreview(event)">
+        <div class="modal-panel" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div>
+                    <h2 id="skill-preview-title">Skill 预览</h2>
+                    <p id="skill-preview-meta"></p>
+                </div>
+                <button class="icon-button modal-close" onclick="closeSkillPreview()">
+                    <i data-lucide="x"></i>
+                </button>
             </div>
+            <div id="skill-preview-content" class="modal-content"></div>
         </div>
     </div>
 
