@@ -3,10 +3,10 @@ import subprocess
 from pathlib import Path
 from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
-from app.tools.terminal import get_workspace_dir, get_last_cwd
+from app.tools.terminal import get_thread_id, get_workspace_dir
 
 
-def _validate_path(workspace_dir: Path, thread_id: str, rel_path: str) -> Path:
+def _validate_path(workspace_dir: Path, rel_path: str) -> Path:
     """校验路径安全性并返回绝对路径，仅允许项目工作区内的相对路径"""
     if rel_path.startswith("/") or rel_path.startswith("\\"):
         raise ValueError("Security Error: 不允许使用绝对路径。请使用相对路径。")
@@ -14,19 +14,11 @@ def _validate_path(workspace_dir: Path, thread_id: str, rel_path: str) -> Path:
     if ".." in rel_path:
         raise ValueError("Security Error: 路径中不允许包含 '..'。")
 
-    current_rel_cwd = get_last_cwd(thread_id)
-    actual_cwd = (workspace_dir / current_rel_cwd).resolve()
-    target = (actual_cwd / rel_path).resolve()
+    target = (workspace_dir / rel_path).resolve()
     if not str(target).startswith(str(workspace_dir.resolve())):
         raise ValueError("Security Error: 禁止访问项目工作区外部路径。")
 
     return target
-
-
-def _get_thread_id(config: RunnableConfig) -> str:
-    """从 RunnableConfig 中提取 thread_id"""
-    return config.get("configurable", {}).get("thread_id", "default_session")
-
 
 @tool(description=(
     "列出指定目录的内容（文件和子目录）。"
@@ -38,13 +30,12 @@ def list_dir(path: str, config: RunnableConfig) -> str:
     列出项目工作区内指定目录的内容。
 
     Args:
-        path (str): 目录路径。必须使用【相对路径】（相对于当前工作目录）。禁止以 '/' 开头。使用 "." 表示当前目录。
+        path (str): 目录路径。必须使用【相对路径】（相对于当前会话的 workspace 根目录）。禁止以 '/' 开头。使用 "." 表示 workspace 根目录。
     """
-    thread_id = _get_thread_id(config)
-    workspace_dir = get_workspace_dir(thread_id)
+    workspace_dir = get_workspace_dir(get_thread_id(config))
 
     try:
-        target = _validate_path(workspace_dir, thread_id, path)
+        target = _validate_path(workspace_dir, path)
 
         if not target.exists():
             return f"Error: 路径 '{path}' 不存在。"
@@ -103,15 +94,14 @@ def grep_search(
 
     Args:
         pattern (str): 搜索模式，支持正则表达式（如 'def .*init' 或 'TODO'）。
-        path (str): 搜索的起始路径。必须使用【相对路径】（相对于当前工作目录）。禁止以 '/' 开头。使用 "." 搜索整个工作空间。
+        path (str): 搜索的起始路径。必须使用【相对路径】（相对于当前会话的 workspace 根目录）。禁止以 '/' 开头。使用 "." 搜索整个工作空间。
         include (str): 可选。文件名过滤 glob（如 '*.py' 仅搜索 Python 文件）。
         ignore_case (bool): 是否忽略大小写匹配，默认 False。
     """
-    thread_id = _get_thread_id(config)
-    workspace_dir = get_workspace_dir(thread_id)
+    workspace_dir = get_workspace_dir(get_thread_id(config))
 
     try:
-        target = _validate_path(workspace_dir, thread_id, path)
+        target = _validate_path(workspace_dir, path)
 
         if not target.exists():
             return f"Error: 路径 '{path}' 不存在。"

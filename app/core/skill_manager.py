@@ -460,8 +460,9 @@ class SkillManager:
             self.load_skills()
             status = self._check_requirements(parsed_skill.requires)
             return (
-                f"Installed skill '{parsed_skill.name}' from ClawHub into `{self._relative_to_project(target_dir)}`. "
-                f"Requirement status: {status.format_summary()}. Download URL: {download_url}"
+                f"Installed skill '{parsed_skill.name}' from ClawHub into `{self._relative_to_project(target_dir)}`. \n"
+                f"Requirement status: {status.format_summary()}. \n"
+                f"Download URL: {download_url}"
             )
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)

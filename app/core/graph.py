@@ -28,7 +28,7 @@ all_main_tools = [sub_task_tool] + base_tools
 # --- Main Graph ---
 def call_main_model(state: AgentState, config: RunnableConfig):
     # 1. 读取工作空间中的任务进度（如果存在）
-    thread_id = config.get("configurable", {}).get("thread_id", "unknown")
+    thread_id = config.get("configurable", {}).get("thread_id", "default_session")
     workspace_dir = get_workspace_dir(thread_id)
 
     instructions = get_main_agent_instructions()

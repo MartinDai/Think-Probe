@@ -2,9 +2,9 @@ import os
 from pathlib import Path
 from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
-from app.tools.terminal import get_workspace_dir, get_last_cwd
+from app.tools.terminal import get_thread_id, get_workspace_dir
 
-def validate_and_get_abs_path(workspace_dir: Path, thread_id: str, rel_file_path: str) -> Path:
+def validate_and_get_abs_path(workspace_dir: Path, rel_file_path: str) -> Path:
     """校验路径安全并返回绝对路径，仅允许在项目工作区内的相对路径"""
     # 显式禁止绝对路径
     if rel_file_path.startswith("/") or rel_file_path.startswith("\\"):
@@ -16,25 +16,15 @@ def validate_and_get_abs_path(workspace_dir: Path, thread_id: str, rel_file_path
 
     if ".." in rel_file_path:
         raise ValueError("Security Error: Path traversal ('..') is not allowed.")
-    
-    # 获取当前会话的工作目录 (CWD)
-    current_rel_cwd = get_last_cwd(thread_id)
-    actual_cwd = (workspace_dir / current_rel_cwd).resolve()
-    
+
     # 计算目标文件的绝对路径
-    target_path = (actual_cwd / rel_file_path).resolve()
+    target_path = (workspace_dir / rel_file_path).resolve()
     
     # 确保目标路径仍在项目工作区内
     if not str(target_path).startswith(str(workspace_dir.resolve())):
         raise ValueError("Security Error: Access outside the project workspace is prohibited.")
     
     return target_path
-
-def get_thread_id(config: RunnableConfig) -> str:
-    """从配置中提取 thread_id"""
-    if "configurable" in config:
-        return config["configurable"].get("thread_id", "default_session")
-    return "default_session"
 
 @tool(description=(
     "在项目工作区内创建新文件或完全覆盖已有文件。"
@@ -46,15 +36,14 @@ def write_file(file_path: str, content: str, config: RunnableConfig, append: boo
     在项目工作区内写入文件。
 
     Args:
-        file_path (str): 目标文件路径。必须使用【相对路径】（相对于当前工作目录）。禁止以 '/' 开头。
+        file_path (str): 目标文件路径。必须使用【相对路径】（相对于当前会话的 workspace 根目录）。禁止以 '/' 开头。
         content (str): 要写入的文件内容。
         append (bool): 若为 True，则追加内容而非覆盖。默认 False。
     """
-    thread_id = get_thread_id(config)
-    workspace_dir = get_workspace_dir(thread_id)
+    workspace_dir = get_workspace_dir(get_thread_id(config))
     
     try:
-        target_path = validate_and_get_abs_path(workspace_dir, thread_id, file_path)
+        target_path = validate_and_get_abs_path(workspace_dir, file_path)
         target_path.parent.mkdir(parents=True, exist_ok=True)
         
         mode = 'a' if append else 'w'
@@ -76,15 +65,14 @@ def edit_file(file_path: str, old_content: str, new_content: str, config: Runnab
     搜索并替换文件中的精确字符串。
 
     Args:
-        file_path (str): 目标文件路径。必须使用【相对路径】（相对于当前工作目录）。禁止以 '/' 开头。
+        file_path (str): 目标文件路径。必须使用【相对路径】（相对于当前会话的 workspace 根目录）。禁止以 '/' 开头。
         old_content (str): 要被替换的原始内容，必须与文件中的文本精确匹配（包含缩进和换行）。
         new_content (str): 替换后的新内容。
     """
-    thread_id = get_thread_id(config)
-    workspace_dir = get_workspace_dir(thread_id)
+    workspace_dir = get_workspace_dir(get_thread_id(config))
     
     try:
-        target_path = validate_and_get_abs_path(workspace_dir, thread_id, file_path)
+        target_path = validate_and_get_abs_path(workspace_dir, file_path)
         if not target_path.exists():
             return f"Error: File {file_path} not found."
             
@@ -111,13 +99,12 @@ def delete_file(file_path: str, config: RunnableConfig) -> str:
     删除沙箱内的文件或目录。
 
     Args:
-        file_path (str): 要删除的文件或目录路径。必须使用【相对路径】（相对于当前工作目录）。禁止以 '/' 开头。
+        file_path (str): 要删除的文件或目录路径。必须使用【相对路径】（相对于当前会话的 workspace 根目录）。禁止以 '/' 开头。
     """
-    thread_id = get_thread_id(config)
-    workspace_dir = get_workspace_dir(thread_id)
+    workspace_dir = get_workspace_dir(get_thread_id(config))
     
     try:
-        target_path = validate_and_get_abs_path(workspace_dir, thread_id, file_path)
+        target_path = validate_and_get_abs_path(workspace_dir, file_path)
         if not target_path.exists():
             return f"Error: File {file_path} not found."
             
@@ -140,15 +127,14 @@ def read_file(file_path: str, config: RunnableConfig, start_line: int = 0, end_l
     读取沙箱内的文件内容。
 
     Args:
-        file_path (str): 要读取的文件路径。必须使用【相对路径】（相对于当前工作目录）。禁止以 '/' 开头。
+        file_path (str): 要读取的文件路径。必须使用【相对路径】（相对于当前会话的 workspace 根目录）。禁止以 '/' 开头。
         start_line (int): 起始行号（1-indexed，含），0 表示从头开始。
         end_line (int): 结束行号（1-indexed，含），0 表示读到文件末尾。
     """
-    thread_id = get_thread_id(config)
-    workspace_dir = get_workspace_dir(thread_id)
+    workspace_dir = get_workspace_dir(get_thread_id(config))
     
     try:
-        target_path = validate_and_get_abs_path(workspace_dir, thread_id, file_path)
+        target_path = validate_and_get_abs_path(workspace_dir, file_path)
         
         if not target_path.exists():
             return f"Error: File {file_path} not found."
