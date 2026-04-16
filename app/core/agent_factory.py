@@ -9,6 +9,7 @@ from langgraph.graph import StateGraph, START, END, add_messages
 from langgraph.prebuilt import ToolNode
 
 from app.core.llm import DEFAULT_MODEL, invoke_with_retry
+from app.core.prompt_context import build_current_time_context
 from app.schemas.agent import SubAgentInput
 
 
@@ -19,7 +20,7 @@ class AgentState(TypedDict):
 def create_agent_subgraph(instructions: str, tools: List[Any] = None) -> StateGraph:
     """Dynamically compiles a StateGraph builder for given instructions and tools."""
     def call_model(state: AgentState):
-        system_msg = SystemMessage(content=instructions)
+        system_msg = SystemMessage(content=instructions + build_current_time_context())
         model = DEFAULT_MODEL
         if tools:
             model = model.bind_tools(tools)

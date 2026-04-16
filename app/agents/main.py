@@ -4,6 +4,7 @@ from app.tools.terminal import bash
 from app.tools.file_editor import write_file, edit_file, delete_file, read_file
 from app.tools.search import list_dir, grep_search, web_search, web_fetch
 from app.core.skill_manager import skill_manager
+from app.core.prompt_context import build_current_time_context
 
 # 从独立文件加载系统 Prompt
 _PROMPT_DIR = Path(__file__).parent / "prompts"
@@ -24,6 +25,7 @@ def get_main_agent_instructions() -> str:
         instructions
         .replace("{{SKILLS_MENU}}", skills_menu)
         .replace("{{SKILL_SOURCES}}", skill_sources)
+        + build_current_time_context()
     )
 
 main_agent = Agent(
