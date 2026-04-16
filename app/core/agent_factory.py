@@ -8,7 +8,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END, add_messages
 from langgraph.prebuilt import ToolNode
 
-from app.core.llm import DEFAULT_MODEL
+from app.core.llm import DEFAULT_MODEL, invoke_with_retry
 from app.schemas.agent import SubAgentInput
 
 
@@ -23,7 +23,7 @@ def create_agent_subgraph(instructions: str, tools: List[Any] = None) -> StateGr
         model = DEFAULT_MODEL
         if tools:
             model = model.bind_tools(tools)
-        response = model.invoke([system_msg] + state["messages"])
+        response = invoke_with_retry(model, [system_msg] + state["messages"])
         return {"messages": [response]}
 
     builder = StateGraph(AgentState)

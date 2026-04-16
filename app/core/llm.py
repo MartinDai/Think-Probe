@@ -1,6 +1,9 @@
+import random
+import time
 from pydantic import SecretStr
 from typing import Optional
 
+from openai import APIConnectionError, APITimeoutError, InternalServerError, RateLimitError
 from langchain_core.messages import AIMessageChunk
 from langchain_core.outputs.chat_generation import ChatGenerationChunk
 from langchain_openai import ChatOpenAI
@@ -42,6 +45,14 @@ class CustomChatOpenAI(ChatOpenAI):
         return generation_chunk
 
 
+RETRYABLE_LLM_ERRORS = (
+    InternalServerError,
+    APIConnectionError,
+    APITimeoutError,
+    RateLimitError,
+)
+
+
 # LLM Configuration
 API_PATH = get_env_variable("LLM_API_PATH")
 API_KEY = get_env_variable("LLM_API_KEY")
@@ -57,3 +68,35 @@ DEFAULT_MODEL = CustomChatOpenAI(
     api_key=SecretStr(API_KEY),
     temperature=0
 )
+
+
+def invoke_with_retry(model, messages, *, max_attempts: int = 4, base_delay: float = 1.0):
+    """
+    调用模型并对瞬时性上游错误做有界重试，避免单次 5xx/超时直接中断整个工作流。
+    """
+    last_error = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return model.invoke(messages)
+        except RETRYABLE_LLM_ERRORS as exc:
+            last_error = exc
+            if attempt >= max_attempts:
+                break
+
+            sleep_seconds = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.3)
+            logger.warning(
+                "LLM call failed with %s on attempt %s/%s, retrying in %.2fs: %s",
+                exc.__class__.__name__,
+                attempt,
+                max_attempts,
+                sleep_seconds,
+                exc,
+            )
+            time.sleep(sleep_seconds)
+        except Exception:
+            raise
+
+    raise RuntimeError(
+        f"LLM 服务连续失败，已重试 {max_attempts} 次。最后一次错误: {last_error}"
+    ) from last_error

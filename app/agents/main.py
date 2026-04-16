@@ -2,7 +2,7 @@ from pathlib import Path
 from app.agents.base import Agent
 from app.tools.terminal import bash
 from app.tools.file_editor import write_file, edit_file, delete_file, read_file
-from app.tools.search import list_dir, grep_search
+from app.tools.search import list_dir, grep_search, web_search, web_fetch
 from app.core.skill_manager import skill_manager
 
 # 从独立文件加载系统 Prompt
@@ -38,6 +38,8 @@ main_agent = Agent(
         # 搜索与浏览
         list_dir,
         grep_search,
+        web_search,
+        web_fetch,
         # 系统任务
         bash,
         # 扩展技能

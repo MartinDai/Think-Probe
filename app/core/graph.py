@@ -7,7 +7,7 @@ from langgraph.graph import StateGraph, START, END, add_messages
 from langgraph.prebuilt import ToolNode
 
 from app.agents.main import main_agent, get_main_agent_instructions
-from app.core.llm import DEFAULT_MODEL
+from app.core.llm import DEFAULT_MODEL, invoke_with_retry
 from app.core.agent_factory import create_sub_task_tool
 from app.tools.terminal import get_workspace_dir
 # --- State Definition ---
@@ -55,7 +55,7 @@ def call_main_model(state: AgentState, config: RunnableConfig):
     if all_main_tools:
         model = model.bind_tools(all_main_tools)
         
-    response = model.invoke([system_msg] + state["messages"])
+    response = invoke_with_retry(model, [system_msg] + state["messages"])
     return {"messages": [response]}
 
 
