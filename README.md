@@ -1,108 +1,122 @@
 # Think-Probe
 
-Think-Probe 是一个基于 LLM 的轻量级自主编程智能体，旨在展示如何构建具有结构化推理、沙箱化工具调用和多智能体协作能力的对话系统。它采用了业界主流智能体（Claude Code、Codex 等）的设计模式，配合现代化 Web 界面，让用户直观地看到 AI 的决策和执行路径。
+Think-Probe 是一个面向通用任务编排的智能体运行时与工作台。它围绕模型调用、工具执行、技能扩展、多智能体协作和会话持久化构建，当前最成熟的能力集中在工程任务、本地工作区操作和可观察的 Agent 执行流程。
 
 ---
 
-## ✨ 核心特性
+## 能力清单
 
-### 🧠 智能体架构
-- **4-Block Contract Prompt**：系统指令采用 `Identity → Workflow → Tool Use Guidelines → Constraints` 四段式合同结构，与 Prompt 文件化管理，参考 Claude Code 的设计范式。
-- **ReAct 循环**：`Observe → Plan → Act → Verify` 标准化工作流，确保每步可验证。
-- **通用子任务委派**：参考 Claude Code 的 `sub_task` 模式，支持主代理动态发起专家级子任务，子代理具备独立执行、深度分析和结果汇总能力。
-- **任务追踪**：对复杂任务自动维护 `task.md` 进度文件，支持长任务的断点续跑。
-- **扩展技能系统 (Skill System)**：支持通过极简 Markdown（`SKILL.md`）定义复杂技能，Agent 可动态发现并查阅执行指南。
+### 已具备能力
 
-### 🛠️ 工具体系
-内置多组沙箱化原生工具，遵循 **专用优先** 原则和 `What + When + Why Not` 描述规范：
+- [x] 通用 Agent Loop：采用 `Observe → Plan → Act → Verify` 的结构化执行流程
+- [x] 主代理 + 子代理协作：通过 `sub_task` 委派复杂分析与子任务执行
+- [x] 文件系统工具：支持读取、写入、编辑、删除、目录浏览和文本搜索
+- [x] 工作区 Shell 执行：支持在受控工作区内执行终端命令并维护会话工作目录
+- [x] 技能系统：支持通过 `SKILL.md` 定义、发现、安装、更新和移除技能
+- [x] 技能来源管理：支持本地技能目录与远程技能源的统一管理
+- [x] 会话持久化：使用 SQLite 保存消息、工具调用、推理内容和子线程关系
+- [x] 推理与执行可视化：通过 Web UI 展示 reasoning、工具流和子代理事件
+- [x] 流式响应：支持 SSE 流式输出主代理与子代理过程
+- [x] 任务追踪：支持通过 `task.md` 记录复杂任务的执行进度
+- [x] 沙箱边界控制：限制工具访问范围，提供路径校验与超时保护
+- [x] 面向工程任务的高成熟度体验：代码修改、问题分析、命令执行和项目内排障已较完整
 
-| 工具 | 职责 |
+### 规划支持的能力
+
+- [ ] 长期记忆层：支持用户偏好、目标、环境上下文和跨会话检索
+- [ ] 记忆压缩与续跑：支持历史摘要、任务恢复和经验回放
+- [ ] 技能学习闭环：从已完成任务中沉淀流程模板或可复用技能
+- [ ] 技能版本治理：支持版本、依赖校验、评分、回滚和验收机制
+- [ ] 更丰富的通用工具：Browser、HTTP、API 调用、表单自动化等
+- [ ] 多执行后端：支持 Docker、SSH、远程工作区等执行环境
+- [ ] 更完整的 MCP 集成：将外部工具与上下文源纳入统一能力层
+- [ ] CLI 入口：在 Web UI 之外提供命令行工作模式
+- [ ] 后台任务与调度：支持定时任务、异步执行和结果通知
+- [ ] 多消息入口：支持 IM / Chat 渠道接入
+- [ ] 多租户与多 Agent Profile：支持团队共享与角色隔离
+- [ ] 评测与回放体系：支持任务评测、失败归因和回放分析
+- [ ] 安全治理增强：支持更细粒度的权限审批、技能签名和来源审计
+
+---
+
+## 核心特性
+
+### 智能体架构
+
+- **4-Block Contract Prompt**：系统指令采用 `Identity → Workflow → Tool Use Guidelines → Constraints` 四段式结构，便于维护与演进。
+- **LangGraph 驱动**：主代理和子代理都基于状态图组织推理与工具调用。
+- **通用子任务委派**：通过 `sub_task` 动态生成专家子代理，复用完整工具集执行复杂任务。
+- **任务追踪**：复杂任务可借助 `task.md` 维持可恢复的执行进度。
+- **技能驱动扩展**：通过极简 `SKILL.md` 把新能力以声明式方式接入主系统。
+
+### 工具与执行
+
+| 工具 | 作用 |
 | :--- | :--- |
 | `read_file` | 读取文件内容，支持行号范围 |
-| `edit_file` | 精确字符串替换（最安全的代码修改方式） |
+| `edit_file` | 精确字符串替换 |
 | `write_file` | 创建新文件或完全覆盖 |
 | `delete_file` | 删除文件或目录 |
-| `list_dir` | 浏览目录结构和项目布局 |
-| `grep_search` | 文本/正则搜索，快速定位代码 |
-| `bash` | 沙箱 Shell 执行，持久 CWD |
-| `sub_task` | 专家级子任务委派（动态生成子代理） |
-| `get_skill_info` | 获取扩展技能（Skill）的详细操作正文 |
-| `search_skills` | 搜索已安装技能和远程 ClawHub 中可安装的技能 |
-| `install_skill` | 按 ClawHub slug 从远程安装技能 |
-| `update_skill` | 根据 ClawHub 安装记录更新技能 |
-| `remove_skill` | 删除已安装技能 |
-| `reload_skills` | 重新扫描技能目录 |
-| `list_skill_sources` | 查看默认技能目录和远程 ClawHub 来源 |
+| `list_dir` | 浏览目录结构 |
+| `grep_search` | 搜索文本或模式 |
+| `bash` | 在工作区沙箱内执行 Shell 命令 |
+| `sub_task` | 派生并运行子代理 |
+| `get_skill_info` | 读取已安装技能正文 |
+| `search_skills` | 搜索本地与 ClawHub 技能 |
+| `install_skill` | 从 ClawHub 安装技能 |
+| `update_skill` | 更新已安装技能 |
+| `remove_skill` | 删除技能 |
+| `reload_skills` | 刷新技能缓存 |
+| `list_skill_sources` | 查看技能目录与远程源 |
 
-### 🔒 安全沙箱
-- 工具访问范围限制在当前项目根目录内；会话元数据保存在 `.workspace/{session_id}/`
-- 路径穿越防护（`..` 禁止、绝对路径校验）
-- `bash` 支持在项目根下的默认 `skills/` 目录安装新 skill，并执行 skill 目录中的脚本
-- 命令执行超时保护
+### 安全与状态
 
-### 🧩 Skill 管理
-- 只保留项目根目录下的默认技能目录：`skills/`
-- 默认远程源为 ClawHub：`https://clawhub.ai`
-- 模型通过专用工具直接请求 ClawHub API 搜索技能，并从技能页下载 zip 包进行安装；所有安装和更新都落到 `skills/`
-- `SKILL.md` 支持 `requires.bins`、`requires.env`、`requires.python_modules` 等元数据，用于判断技能是否可立即执行
-
-### 🌊 实时交互
-- **深度思考可视化**：支持展示 LLM 的 `reasoning_content`（思考链），AI 决策过程不再是"黑盒"
-- **流式响应**：通过高度优化的 SSE 路由，支持主/子智能体交替流式输出
-- **会话持久化**：集成 SQLite 业务数据库。通过历史上下文显式注入机制，实现稳定、可控的多轮对话状态恢复
-
-### 🏗️ 现代化 UI
-- 清新简约的响应式界面
-- 智能滚动追踪与手动覆写
-- 代码高亮与折叠式思考链展示
-- 工具调用过程的结构化可视化
+- 工具访问默认限制在当前项目根目录，相关会话状态保存于 `.workspace/{session_id}/`
+- 具备路径穿越防护、工作目录控制和命令执行超时保护
+- SQLite 持久化保存会话、工具调用、推理内容和子线程映射
+- SSE 流式输出支持主代理和子代理交替反馈
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ### 1. 环境准备
 
-确保您的系统已安装 Python 3.12+。推荐使用 [uv](https://github.com/astral-sh/uv) 进行包管理。
+确保系统安装 Python 3.12，推荐使用 [uv](https://github.com/astral-sh/uv) 管理依赖。
 
 ```bash
-# 安装 uv (如果尚未安装)
 pip install uv
 ```
 
-### 2. 初始化项目
+### 2. 安装依赖
 
 ```bash
-# 同步依赖并创建虚拟环境
 uv sync
 ```
 
 ### 3. 配置环境变量
 
-复制 `.env.example`（如果存在）或直接创建 `.env` 文件，并填写必要的信息：
+创建 `.env` 并填写模型配置：
 
 ```ini
-LLM_API_PATH=https://api.openai.com/v1 # 或您的代理地址
+LLM_API_PATH=https://api.openai.com/v1
 LLM_API_KEY=sk-...
-LLM_MODEL_NAME=qwen3.5-35b-a3b # 建议使用 Qwen2.5/3.5, GPT-4o, DeepSeek-V3 等
+LLM_MODEL_NAME=qwen3.5-35b-a3b
 ```
 
-### 4. 运行应用
+### 4. 启动服务
 
 ```bash
-# 启动 FastAPI 服务
 python run.py
 ```
 
-服务启动后，在浏览器访问 [http://127.0.0.1:8080](http://127.0.0.1:8080) 即可开始使用。
+启动后访问 [http://127.0.0.1:8080](http://127.0.0.1:8080)。
 
 ---
 
-## 🐳 容器化部署
+## 容器化部署
 
-### 使用 Docker Compose (推荐)
-
-创建或修改 `docker-compose.yml`：
+### Docker Compose
 
 ```yaml
 services:
@@ -123,8 +137,6 @@ networks:
     driver: bridge
 ```
 
-执行启动命令：
-
 ```bash
 docker-compose up -d
 ```
@@ -132,52 +144,39 @@ docker-compose up -d
 ### 本地构建镜像
 
 ```bash
-# 使用 Makefile 进行多平台构建
 make linux-amd64
 ```
 
 ---
 
-## 📁 项目结构
+## 项目结构
 
-```
+```text
 app/
-├── agents/             # 智能体定义
-│   ├── prompts/        # 系统 Prompt 文件（.md 格式，文件化管理）
-│   │   ├── main_agent.md # 主代理指令：身份、工作流、委派策略
-│   │   └── sub_agent.md  # 子代理指令：通用子任务执行标准
-│   ├── base.py         # Agent 基类
-│   └── main.py         # 主智能体入口（加载指令、绑定工具）
-├── core/               # 核心架构
-│   ├── graph.py        # LangGraph 状态机与工具注册
-│   ├── llm.py          # LLM 配置与自定义模型
-│   ├── agent_factory.py # 子智能体动态工厂
-│   └── skill_manager.py # 技能加载与查询核心逻辑
-├── skills/             # 扩展技能库
-├── tools/              # 沙箱化工具集
-│   ├── file_editor.py  # 文件读写/编辑/删除
-│   ├── search.py       # 目录浏览与文本搜索
-│   └── terminal.py     # Shell 命令执行
-├── service/            # 业务逻辑层
-├── api/                # FastAPI 路由
-└── store/              # 数据库持久化
+├── agents/               # 主代理与子代理定义、Prompt
+├── api/                  # FastAPI 路由
+├── core/                 # LangGraph、LLM、技能管理、子代理工厂
+├── service/              # 工作流与会话服务
+├── store/                # SQLite 持久化
+├── tools/                # 文件、搜索、终端等本地工具
+└── utils/                # SSE 与日志等辅助组件
+skills/                   # 已安装技能目录
 ```
 
 ---
 
-## 🛠️ 技术栈
+## 技术栈
 
-- **核心架构**: [LangGraph](https://www.langchain.com/langgraph), [LangChain](https://www.langchain.com/)
-- **后端框架**: [FastAPI](https://fastapi.tiangolo.com/)
-- **数据库**: SQLite (Checkpoints + 消息持久化)
-- **观测性**: [Langfuse](https://langfuse.com/) (全链路追踪)
-- **包管理**: [uv](https://github.com/astral-sh/uv)
-- **前端**: Vanilla JS (ES6+), CSS3 (Modern Flex/Grid), HTML5
-- **协议**: OpenAI API Standard, MCP, SSE
+- **核心**: LangGraph, LangChain
+- **后端**: FastAPI
+- **数据库**: SQLite + SQLAlchemy + aiosqlite
+- **观测**: Langfuse
+- **协议**: OpenAI API, MCP, SSE
+- **前端**: Vanilla JS + HTML + CSS
 - **部署**: Docker, Docker Compose
 
 ---
 
-## 📝 许可证
+## 许可证
 
 本项目采用 [MIT](LICENSE) 许可证。

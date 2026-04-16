@@ -1,7 +1,7 @@
 [project]
 name = "Think-Probe"
 version = "0.1.0"
-description = "A lightweight agent application based on LLM"
+description = "A general-purpose agent runtime and workbench built on LLMs"
 authors = [
     {name = "MartinDai", email = "xiaomingys@gmail.com"},
 ]
