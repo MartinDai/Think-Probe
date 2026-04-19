@@ -9,6 +9,7 @@ from langgraph.prebuilt import ToolNode
 from app.agents.main import main_agent, get_main_agent_instructions
 from app.core.llm import DEFAULT_MODEL, invoke_with_retry
 from app.core.agent_factory import create_sub_task_tool
+from app.service.context_compaction_service import build_compaction_prompt
 from app.tools.terminal import get_workspace_dir
 # --- State Definition ---
 class AgentState(TypedDict):
@@ -32,6 +33,7 @@ def call_main_model(state: AgentState, config: RunnableConfig):
     workspace_dir = get_workspace_dir(thread_id)
 
     instructions = get_main_agent_instructions()
+    instructions += build_compaction_prompt(thread_id)
 
     # 2. 注入任务进度上下文
     task_file = workspace_dir / "task.md"

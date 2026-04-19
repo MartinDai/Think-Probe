@@ -7,7 +7,7 @@ from langfuse.langchain import CallbackHandler
 from app.context.conversation_context import ConversationContext
 from app.core.llm import MODEL_NAME
 from app.core.graph import workflow
-from app.service import conversation_service
+from app.service import context_compaction_service, conversation_service
 from app.utils.response_util import SSEBuilder
 
 
@@ -50,7 +50,12 @@ async def process_message(message: str, context: ConversationContext):
 
         # Explicitly load conversation history from DB to maintain multi-turn context (since checkpointer is removed)
         history = await conversation_service.get_messages(conversation_id)
-        inputs = {"messages": history}
+        inputs = {
+            "messages": context_compaction_service.prepare_messages_for_model(
+                conversation_id,
+                history,
+            )
+        }
 
         graph = workflow.compile()
         

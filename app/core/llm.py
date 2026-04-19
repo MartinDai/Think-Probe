@@ -57,17 +57,25 @@ RETRYABLE_LLM_ERRORS = (
 API_PATH = get_env_variable("LLM_API_PATH")
 API_KEY = get_env_variable("LLM_API_KEY")
 MODEL_NAME = get_env_variable("LLM_MODEL_NAME")
+COMPACTION_MODEL_NAME = get_env_variable("LLM_COMPACTION_MODEL_NAME")
 
 logger.info(f"API_PATH: {API_PATH}")
 logger.info(f"MODEL_NAME: {MODEL_NAME}")
+logger.info(f"COMPACTION_MODEL_NAME: {COMPACTION_MODEL_NAME or MODEL_NAME}")
+
+
+def create_chat_model(model_name: Optional[str] = None) -> CustomChatOpenAI:
+    return CustomChatOpenAI(
+        model=model_name or MODEL_NAME,
+        base_url=API_PATH,
+        api_key=SecretStr(API_KEY),
+        temperature=0,
+    )
+
 
 # Default model instance
-DEFAULT_MODEL = CustomChatOpenAI(
-    model=MODEL_NAME, 
-    base_url=API_PATH,
-    api_key=SecretStr(API_KEY),
-    temperature=0
-)
+DEFAULT_MODEL = create_chat_model(MODEL_NAME)
+COMPACTION_MODEL = create_chat_model(COMPACTION_MODEL_NAME) if COMPACTION_MODEL_NAME else DEFAULT_MODEL
 
 
 def invoke_with_retry(model, messages, *, max_attempts: int = 4, base_delay: float = 1.0):
