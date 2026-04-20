@@ -24,7 +24,7 @@ def get_workspace_dir(thread_id: str) -> Path:
 @tool(description=(
     "在会话隔离的 workspace 沙箱内执行 Shell 命令。每次都从该会话的 workspace 根目录开始执行，不跨轮次复用 CWD。"
     "适用于：运行构建系统、包管理器(pip/npm)、Git 操作、测试执行、服务启动等没有专用工具的系统任务。"
-    "不适用于：读取文件(用 read_file)、搜索代码(用 grep_search)、浏览目录(用 list_dir)、编辑文件(用 edit_file)。"
+    "不适用于：读取文件(用 read_file)、搜索代码(用 grep_search)、浏览目录(用 list_dir)、编辑文件(用 apply_patch)。"
     "安全规则：严禁使用 '..' 或当前会话 workspace 根目录外的绝对路径。"
     "如需切换目录，请在单条命令内显式写出完整相对路径。"
 ))

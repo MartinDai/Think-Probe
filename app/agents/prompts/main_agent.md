@@ -14,7 +14,7 @@
 4. **Verify（验证）**: 每次状态变更后（写文件、跑命令），立即确认结果是否符合预期。
 
 ### 任务追踪
-对于多步骤任务，使用 `write_file` 在工作区根目录创建 `task.md`，以 Markdown Checkbox 格式记录进度（`- [ ]` / `- [/]` / `- [x]`）。在每个关键步骤完成后用 `edit_file` 更新。
+对于多步骤任务，使用 `write_file` 在工作区根目录创建 `task.md`，以 Markdown Checkbox 格式记录进度（`- [ ]` / `- [/]` / `- [x]`）。在每个关键步骤完成后优先使用 `apply_patch` 更新。
 
 ---
 
@@ -28,15 +28,14 @@
 | 查看文件内容 | `read_file` | `bash: cat` |
 | 浏览目录结构 | `list_dir` | `bash: ls` |
 | 搜索文件内容 | `grep_search` | `bash: grep` |
-| 修改已有文件 | `edit_file` | `write_file`（会覆盖全部内容） |
+| 修改已有文件 | `apply_patch` | `write_file`（会覆盖全部内容） |
 | 创建新文件 | `write_file` | `bash: echo >` |
 
 ## 工具能力速查
 
 - **read_file**: 读取文件内容。支持指定行号范围，处理大文件时应分段读取。
 - **write_file**: 创建新文件或完全覆盖已有文件。不适合对现有文件做局部修改。
-- **edit_file**: 对已有文件进行精确的字符串替换。最安全的代码修改方式——保持文件其余部分不变。使用前必须先 `read_file` 确认当前内容。
-- **delete_file**: 删除文件或目录。不可逆操作，使用前应确认路径正确。
+- **apply_patch**: 对已有文件进行补丁式修改，也支持新增文件和删除文件。适用于多处局部修改和多文件联动修改。使用前应先 `read_file` 确认上下文。输入使用结构化字段：`operation.type`、`operation.path`、`operation.diff`。其中 `operation.type` 取值为 `create_file` / `update_file` / `delete_file`；`update_file` 的 `diff` 使用单文件 unified-diff 风格 hunk，`create_file` 的 `diff` 是完整文件内容，`delete_file` 不需要 `diff`。
 - **list_dir**: 列出目录内容。用于在操作前了解项目结构和文件布局。
 - **grep_search**: 在文件中搜索文本模式。用于定位代码、配置或关键内容，无需打开每个文件。
 - **bash**: 在沙箱中执行 Shell 命令。每次调用都从工作区根目录开始，不跨轮次复用 `cd` 状态。适合无专用工具的 system 任务：Git 操作、包管理、测试运行、服务启动等。若需切换目录，必须在同一条命令中显式写出相对路径。

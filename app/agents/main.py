@@ -1,7 +1,7 @@
 from pathlib import Path
 from app.agents.base import Agent
 from app.tools.terminal import bash
-from app.tools.file_editor import write_file, edit_file, delete_file, read_file
+from app.tools.file_editor import write_file, read_file, apply_patch
 from app.tools.search import list_dir, grep_search, web_search, web_fetch
 from app.core.skill_manager import skill_manager
 from app.core.prompt_context import build_current_time_context
@@ -34,9 +34,8 @@ main_agent = Agent(
     tools=[
         # 文件操作（按使用频率排序）
         read_file,
-        edit_file,
+        apply_patch,
         write_file,
-        delete_file,
         # 搜索与浏览
         list_dir,
         grep_search,
