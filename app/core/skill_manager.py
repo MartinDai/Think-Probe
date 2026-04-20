@@ -9,6 +9,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -120,6 +121,40 @@ class Skill:
     @property
     def directory(self) -> Path:
         return self.source_file.parent
+
+
+class _AnchorExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.anchors: List[Dict[str, str]] = []
+        self._current_href = ""
+        self._text_parts: List[str] = []
+
+    def handle_starttag(self, tag: str, attrs: List[tuple[str, str | None]]):
+        if tag != "a":
+            return
+        self._current_href = ""
+        self._text_parts = []
+        for key, value in attrs:
+            if key == "href" and value:
+                self._current_href = value
+                break
+
+    def handle_data(self, data: str):
+        if self._current_href:
+            self._text_parts.append(data)
+
+    def handle_endtag(self, tag: str):
+        if tag != "a" or not self._current_href:
+            return
+        self.anchors.append(
+            {
+                "href": self._current_href,
+                "text": " ".join(part.strip() for part in self._text_parts if part.strip()),
+            }
+        )
+        self._current_href = ""
+        self._text_parts = []
 
 
 class SkillManager:
@@ -265,10 +300,29 @@ class SkillManager:
         return self._skill_page_from_item(exact or items[0])
 
     def _extract_download_url(self, page_html: str) -> str:
-        match = re.search(r'href="([^"]+)"[^>]*>\s*Download zip\s*<', page_html, re.IGNORECASE)
-        if not match:
-            raise ValueError("Could not find 'Download zip' link on ClawHub skill page.")
-        return urllib.parse.urljoin(CLAWHUB_SITE, match.group(1))
+        parser = _AnchorExtractor()
+        parser.feed(page_html)
+
+        for anchor in parser.anchors:
+            href = anchor["href"]
+            text = anchor["text"].strip().lower()
+            if not href:
+                continue
+            if "download zip" in text:
+                return urllib.parse.urljoin(CLAWHUB_SITE, href)
+
+        patterns = [
+            r'href="([^"]+)"[^>]*download[^>]*zip',
+            r'href="([^"]+convex\.site[^"]+)"',
+            r'href="([^"]+/api/[^"]*download[^"]+)"',
+            r'(https://[^"\']+convex\.site[^"\']+\.zip)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, page_html, re.IGNORECASE)
+            if match:
+                return urllib.parse.urljoin(CLAWHUB_SITE, match.group(1))
+
+        raise ValueError("Could not find a downloadable skill archive link on the ClawHub skill page.")
 
     def _detect_skill_dir(self, checkout_dir: Path) -> Path:
         if (checkout_dir / "SKILL.md").exists():
@@ -500,17 +554,17 @@ class SkillManager:
         self.load_skills()
         return f"Removed skill '{skill_name}' from `{self._relative_to_project(skill.directory)}`."
 
-    def get_skill_info_tool(self):
+    def get_load_skill_tool(self):
         @tool
-        def get_skill_info(skill_name: str) -> str:
+        def load_skill(skill_name: str) -> str:
             """
-            获取指定扩展技能（Skill）的详细操作流程和内容。
-            当你需要执行系统 Prompt 中列出的特定技能时，请调用此工具查看其正文说明。
+            加载指定 Skill 的正文说明和使用约束。
+            当某个已安装 skill 与当前任务匹配时，调用此工具读取其完整指南。
             """
 
             return self.get_skill_info(skill_name)
 
-        return get_skill_info
+        return load_skill
 
     def get_skill_sources_tool(self) -> StructuredTool:
         def list_skill_sources() -> str:

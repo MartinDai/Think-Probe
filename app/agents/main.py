@@ -20,11 +20,9 @@ def get_main_agent_instructions() -> str:
     """加载并处理主代理指令，注入动态内容"""
     instructions = _load_prompt("main_agent.md")
     skills_menu = skill_manager.get_skills_menu()
-    skill_sources = skill_manager.get_skill_sources_summary()
     return (
         instructions
         .replace("{{SKILLS_MENU}}", skills_menu)
-        .replace("{{SKILL_SOURCES}}", skill_sources)
         + build_current_time_context()
     )
 
@@ -44,13 +42,7 @@ main_agent = Agent(
         # 系统任务
         bash,
         # 扩展技能
-        skill_manager.get_skill_info_tool(),
-        skill_manager.get_skill_sources_tool(),
-        skill_manager.get_search_skills_tool(),
-        skill_manager.get_install_skill_tool(),
-        skill_manager.get_update_skill_tool(),
-        skill_manager.get_remove_skill_tool(),
-        skill_manager.get_reload_skills_tool(),
+        skill_manager.get_load_skill_tool(),
     ],
     sub_agents=[],  # Sub-agents are wired in workflow_service
 )

@@ -25,9 +25,9 @@
                     <i data-lucide="message-square"></i>
                     <span>聊天</span>
                 </button>
-                <button class="nav-item" data-view="skills" onclick="switchSidebarView('skills')" title="Skills 管理">
+                <button class="nav-item" data-view="skills" onclick="switchSidebarView('skills')" title="技能管理">
                     <i data-lucide="blocks"></i>
-                    <span>Skills 管理</span>
+                    <span>技能管理</span>
                 </button>
             </div>
         </aside>
@@ -78,15 +78,50 @@
                 <div class="skills-page">
                     <div class="page-header">
                         <div>
-                            <h1>Skills 管理</h1>
-                            <p>查看当前项目已安装的 skills。</p>
+                            <h1>技能管理</h1>
+                            <p>查看、搜索、安装、更新和移除当前项目中的技能。</p>
                         </div>
-                        <button class="icon-button refresh-button" onclick="loadSkills(true)" title="刷新 Skills">
-                            <i data-lucide="refresh-cw"></i>
-                            <span>刷新</span>
-                        </button>
+                        <div class="skills-header-actions">
+                            <button class="icon-button refresh-button" onclick="toggleSkillSources()" title="查看来源">
+                                <i data-lucide="database"></i>
+                                <span>来源</span>
+                            </button>
+                            <button class="icon-button refresh-button" onclick="loadSkills(true)" title="刷新技能列表">
+                                <i data-lucide="refresh-cw"></i>
+                                <span>刷新</span>
+                            </button>
+                        </div>
                     </div>
-                    <div id="skills-list" class="skills-page-list"></div>
+
+                    <div class="skills-scroll-region">
+                        <div class="skills-controls">
+                            <div class="skills-search-row">
+                                <div class="skill-input-group">
+                                    <label for="skill-search-input">搜索技能</label>
+                                    <div class="skill-inline-input">
+                                        <input id="skill-search-input" type="text" placeholder="关键词，如 ppt、excel、diagram" onkeydown="handleSkillSearchKeydown(event)" />
+                                        <button class="icon-button" onclick="searchSkills()" title="搜索技能">
+                                            <i data-lucide="search"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="skill-input-group">
+                                <label for="skill-install-input">安装技能</label>
+                                <div class="skill-inline-input">
+                                    <input id="skill-install-input" type="text" placeholder="输入 ClawHub 标识或页面链接" onkeydown="handleSkillInstallKeydown(event)" />
+                                    <button class="icon-button" onclick="installSkillFromInput()" title="安装技能">
+                                        <i data-lucide="download"></i>
+                                    </button>
+                                </div>
+                                </div>
+                            </div>
+
+                            <div id="skill-sources-panel" class="skills-info-panel hidden"></div>
+                            <div id="skill-remote-results" class="skills-remote-results hidden"></div>
+                        </div>
+
+                        <div id="skills-list" class="skills-page-list"></div>
+                    </div>
                 </div>
             </section>
         </div>
@@ -96,7 +131,7 @@
         <div class="modal-panel" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <div>
-                    <h2 id="skill-preview-title">Skill 预览</h2>
+                    <h2 id="skill-preview-title">技能详情</h2>
                     <p id="skill-preview-meta"></p>
                 </div>
                 <button class="icon-button modal-close" onclick="closeSkillPreview()">
@@ -106,6 +141,8 @@
             <div id="skill-preview-content" class="modal-content"></div>
         </div>
     </div>
+
+    <div id="toast-container" class="toast-container"></div>
 
     <script src="/static/script.js"></script>
 </body>

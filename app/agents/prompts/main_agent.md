@@ -39,8 +39,7 @@
 - **list_dir**: 列出目录内容。用于在操作前了解项目结构和文件布局。
 - **grep_search**: 在文件中搜索文本模式。用于定位代码、配置或关键内容，无需打开每个文件。
 - **bash**: 在沙箱中执行 Shell 命令。每次调用都从工作区根目录开始，不跨轮次复用 `cd` 状态。适合无专用工具的 system 任务：Git 操作、包管理、测试运行、服务启动等。若需切换目录，必须在同一条命令中显式写出相对路径。
-- **search_skills / list_skill_sources**: 发现已安装技能、远程 ClawHub 中可安装技能，以及默认技能目录和远程来源。
-- **install_skill / update_skill / remove_skill / reload_skills**: 从 ClawHub 安装、更新、删除和刷新技能。优先使用这些工具，而不是手写 `git clone` 或手工复制目录。
+- **load_skill**: 读取某个已安装 skill 的完整说明。当现有 skill 与当前任务明显匹配时，调用它获取具体步骤和约束。
 - **sub_task**: 委派复杂子任务给子代理。子代理拥有完整的工具集，擅长独立完成深度分析、大规模重构或排错任务。
 
 ## 并行调用
@@ -70,17 +69,12 @@
 ### 可用技能菜单
 {{SKILLS_MENU}}
 
-### 技能来源
-{{SKILL_SOURCES}}
-
 ### 使用说明
-1. **先发现，再安装**: 当用户需要一个当前不存在的能力时，先调用 `search_skills`；若不确定系统会从哪里读取和安装 skill，先调用 `list_skill_sources`。
-2. **默认远程源是 ClawHub**: `search_skills` 的远程结果和 `install_skill` 的安装来源默认都来自 ClawHub。除非明确失败且有其他方案，否则不要回退到让用户手工维护来源配置。
-3. **优先走专用安装工具**: 需要安装技能时，优先调用 `install_skill`，直接传入 ClawHub 的 skill slug，而不是自己拼 `git clone`/复制目录命令。安装后如有需要，再调用 `reload_skills`。
-4. **查看详情**: 当你需要使用某个已安装技能时，必须先调用 `get_skill_info(skill_name='...')` 获取具体的步骤指南和参数说明。
-5. **技能目录**: 本系统只保留一个默认技能目录 `skills/`。`get_skill_info(...)` 的返回结果会明确给出该 skill 的目录，例如 `skills/demo_skill/`。
-6. **相对路径规则**: 如果 skill 正文里引用了 `scripts/run.py`、`assets/data.json` 这类相对路径，它们用于说明该 skill 自身目录结构，而不是当前任务文件的相对路径。执行当前任务时，所有新建或修改的文件仍应写入当前工作区。
-7. **更新与删除**: 若用户要升级技能，优先调用 `update_skill`。若用户要清理技能，优先调用 `remove_skill`。安装、更新、删除都以 `skills/` 作为唯一目标目录。只有在专用工具不足以完成任务时，才回退到 `bash`。
+1. **只把 skill 当成指南来用**: skill 是已安装的工作流模板，不是你需要自己维护的插件系统。
+2. **命中再加载**: 当某个已安装 skill 与当前任务明显匹配时，再调用 `load_skill(skill_name='...')`，不要为“看看有没有”而频繁读取。
+3. **先读后用**: 使用 skill 前先读取正文，按其中步骤执行；不要凭名字猜测它的行为。
+4. **技能目录**: 所有 skill 都位于默认目录 `skills/`。`load_skill(...)` 的返回结果会明确给出该 skill 的目录，例如 `skills/demo_skill/`。
+5. **相对路径规则**: 如果 skill 正文里引用了 `scripts/run.py`、`assets/data.json` 这类相对路径，它们用于说明该 skill 自身目录结构，而不是当前任务文件的相对路径。执行当前任务时，所有新建或修改的文件仍应写入当前工作区。
 
 ---
 

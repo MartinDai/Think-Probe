@@ -8,6 +8,11 @@ let autoScrollEnabled = true;
 let currentSidebarView = 'chat';
 let isMenuSidebarCollapsed = false;
 let currentSkillDetail = null;
+let currentSkillSearchResults = [];
+let currentSkillSources = null;
+let currentSkillSearchQuery = '';
+let hasSkillSearchRun = false;
+let installingSkillRefs = new Set();
 
 function scrollToBottom(force = false) {
     const messagesDiv = document.getElementById('messages');
@@ -168,13 +173,27 @@ function renderSkillsList() {
 
     listDiv.innerHTML = '';
 
+    const sectionHeader = document.createElement('div');
+    sectionHeader.className = 'skills-section-header installed-section-header';
+    sectionHeader.innerHTML = `
+        <div class="section-heading-group">
+            <h3>${currentSkillSearchQuery ? '已安装匹配' : '已安装技能'}</h3>
+            <p>${currentSkillSearchQuery ? `当前关键词“${escapeHtml(currentSkillSearchQuery)}”在本地命中的结果。` : '当前项目中已经安装并可直接使用的技能。'}</p>
+        </div>
+        <div class="section-header-actions">
+            <span class="section-count-badge">${installedSkills.length}</span>
+            ${currentSkillSearchQuery ? '<button class="icon-button subtle-action-button" onclick="clearSkillSearch()" title="清空搜索"><i data-lucide="x"></i></button>' : ''}
+        </div>
+    `;
+    listDiv.appendChild(sectionHeader);
+
     if (!installedSkills.length) {
         const emptyState = document.createElement('div');
         emptyState.className = 'sidebar-empty-state';
         emptyState.innerHTML = `
             <i data-lucide="blocks"></i>
-            <h3>暂无已安装 Skills</h3>
-            <p>当前项目的 \`skills/\` 目录下还没有可用技能。</p>
+            <h3>${currentSkillSearchQuery ? '没有本地匹配结果' : '暂无已安装技能'}</h3>
+            <p>${currentSkillSearchQuery ? `当前项目里没有和“${escapeHtml(currentSkillSearchQuery)}”匹配的已安装技能。你可以看看上面的远程搜索结果。` : '当前项目的 `skills/` 目录下还没有可用技能。'}</p>
         `;
         listDiv.appendChild(emptyState);
         lucide.createIcons();
@@ -189,6 +208,9 @@ function renderSkillsList() {
         const tags = (skill.tags || []).map((tag) => `<span class="skill-tag">${tag}</span>`).join('');
         const version = skill.version ? `<span class="skill-version">v${skill.version}</span>` : '';
         const source = skill.source ? `<div class="skill-meta-row">来源: ${skill.source}</div>` : '';
+        const requirements = skill.requirements && !skill.requirements.ready
+            ? `<div class="skill-meta-row skill-warning">环境检查: ${skill.requirements.summary}</div>`
+            : '';
 
         skillItem.innerHTML = `
             <div class="skill-item-header">
@@ -196,17 +218,431 @@ function renderSkillsList() {
                     <i data-lucide="sparkles"></i>
                     <span class="skill-name">${skill.name}</span>
                 </div>
-                ${version}
+                <div class="skill-item-actions">
+                    ${version}
+                    <button class="icon-button skill-action-button" onclick="event.stopPropagation(); updateSkill(decodeURIComponent('${encodeURIComponent(skill.name)}'))" title="更新技能">
+                        <i data-lucide="refresh-cw"></i>
+                    </button>
+                    <button class="icon-button skill-action-button danger" onclick="event.stopPropagation(); removeSkill(decodeURIComponent('${encodeURIComponent(skill.name)}'))" title="移除技能">
+                        <i data-lucide="trash-2"></i>
+                    </button>
+                </div>
             </div>
             <p class="skill-description">${skill.description || '暂无描述'}</p>
             <div class="skill-meta-row">目录: <code>${skill.path}</code></div>
             ${source}
+            ${requirements}
             ${tags ? `<div class="skill-tags">${tags}</div>` : ''}
         `;
         listDiv.appendChild(skillItem);
     });
 
     lucide.createIcons();
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function formatSkillError(error) {
+    const message = String(error?.message || error || '').trim();
+    if (!message) {
+        return '发生了一点小问题，请稍后再试。';
+    }
+    return message
+        .replace(/^HTTP error!\s*Status:\s*/i, '请求失败，状态码：')
+        .replace(/^Skill not found$/i, '没有找到对应的技能')
+        .replace(/^Error:\s*/i, '');
+}
+
+function showSkillsFeedback(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toastIcons = {
+        success: 'circle-check-big',
+        error: 'circle-alert',
+        info: 'info',
+    };
+    const iconName = toastIcons[type] || toastIcons.info;
+
+    const toast = document.createElement('div');
+    toast.className = `toast-message ${type}`;
+    toast.innerHTML = `
+        <div class="toast-content">
+            <div class="toast-icon">
+                <i data-lucide="${iconName}"></i>
+            </div>
+            <div class="toast-body">${escapeHtml(message)}</div>
+        </div>
+        <button class="toast-close" type="button" aria-label="关闭提示">
+            <i data-lucide="x"></i>
+        </button>
+    `;
+
+    const removeToast = () => {
+        if (!toast.parentNode) return;
+        toast.classList.add('leaving');
+        window.setTimeout(() => {
+            toast.remove();
+        }, 220);
+    };
+
+    toast.querySelector('.toast-close')?.addEventListener('click', removeToast);
+    container.appendChild(toast);
+    lucide.createIcons();
+
+    window.setTimeout(removeToast, type === 'error' ? 5000 : 3200);
+}
+
+function clearSkillsFeedback() {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    container.innerHTML = '';
+}
+
+function renderRemoteSkillResults(results = [], remoteError = null) {
+    const container = document.getElementById('skill-remote-results');
+    if (!container) return;
+
+    if (remoteError) {
+        container.className = 'skills-remote-results';
+        container.innerHTML = `
+            <div class="sidebar-empty-state">
+                <i data-lucide="triangle-alert"></i>
+                <h3>远程搜索失败</h3>
+                <p>${escapeHtml(remoteError)}</p>
+            </div>
+        `;
+        lucide.createIcons();
+        return;
+    }
+
+    if (!results.length && !hasSkillSearchRun) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+    }
+
+    if (!results.length) {
+        container.className = 'skills-remote-results';
+        container.innerHTML = `
+            <div class="skills-section-header">
+                <div class="section-heading-group">
+                    <h3>${currentSkillSearchQuery ? '远程搜索结果' : '远程推荐结果'}</h3>
+                    <p>${currentSkillSearchQuery ? `没有找到和“${escapeHtml(currentSkillSearchQuery)}”匹配的远程技能。` : '当前没有可展示的远程推荐结果。'}</p>
+                </div>
+                <div class="section-header-actions">
+                    <span class="section-count-badge">0</span>
+                </div>
+            </div>
+            <div class="sidebar-empty-state">
+                <i data-lucide="search-x"></i>
+                <h3>${currentSkillSearchQuery ? '没有远程匹配结果' : '暂无远程推荐'}</h3>
+                <p>${currentSkillSearchQuery ? '可以换个关键词再试，或者直接输入 ClawHub 标识或页面链接来安装。' : '可以稍后重试，或者直接输入已知的 ClawHub 标识或页面链接来安装。'}</p>
+            </div>
+        `;
+        lucide.createIcons();
+        return;
+    }
+
+    container.className = 'skills-remote-results';
+    container.innerHTML = `
+        <div class="skills-section-header">
+            <div class="section-heading-group">
+                <h3>${currentSkillSearchQuery ? '远程搜索结果' : '远程推荐结果'}</h3>
+                <p>${currentSkillSearchQuery ? `来自 ClawHub 的“${escapeHtml(currentSkillSearchQuery)}”相关结果，可直接安装到当前项目。` : '来自 ClawHub 的可安装技能推荐。'}</p>
+            </div>
+            <div class="section-header-actions">
+                <span class="section-count-badge">${results.length}</span>
+            </div>
+        </div>
+        <div class="remote-skill-list">
+            ${results.map((skill) => `
+                <div class="remote-skill-item">
+                    <div>
+                        <div class="remote-skill-title-row">
+                            <div class="remote-skill-name">${escapeHtml(skill.name || skill.slug || '未命名技能')}</div>
+                            ${skill.installed ? `<span class="installed-pill">已安装</span>` : ''}
+                        </div>
+                        <div class="skill-meta-row">${escapeHtml(skill.slug || '')}</div>
+                        ${skill.installed && skill.installed_skill_name ? `<div class="skill-meta-row">本地对应: ${escapeHtml(skill.installed_skill_name)}</div>` : ''}
+                        <p class="skill-description">${escapeHtml(skill.summary || '暂无描述')}</p>
+                        ${skill.page_url ? `<a class="skill-link" href="${escapeHtml(skill.page_url)}" target="_blank" rel="noreferrer">打开来源页</a>` : ''}
+                    </div>
+                    ${skill.installed
+                        ? `<button class="icon-button remote-installed-button" disabled title="这个技能已经安装">
+                            <i data-lucide="check"></i>
+                        </button>`
+                        : installingSkillRefs.has(skill.slug || skill.page_url || '')
+                            ? `<button class="icon-button remote-installing-button" disabled title="正在安装">
+                                <i data-lucide="loader-circle"></i>
+                            </button>`
+                        : `<button class="icon-button" onclick="installSkill(decodeURIComponent('${encodeURIComponent(skill.slug || skill.page_url || '')}'))" title="安装技能">
+                            <i data-lucide="download"></i>
+                        </button>`
+                    }
+                </div>
+            `).join('')}
+        </div>
+    `;
+    lucide.createIcons();
+}
+
+function clearSkillSearch() {
+    currentSkillSearchQuery = '';
+    currentSkillSearchResults = [];
+    hasSkillSearchRun = false;
+    const searchInput = document.getElementById('skill-search-input');
+    if (searchInput) {
+        searchInput.value = '';
+    }
+    renderRemoteSkillResults([], null);
+    clearSkillsFeedback();
+    loadSkills();
+}
+
+function renderSkillSourcesPanel() {
+    const panel = document.getElementById('skill-sources-panel');
+    if (!panel) return;
+    if (!currentSkillSources) {
+        panel.classList.add('hidden');
+        panel.innerHTML = '';
+        return;
+    }
+
+    panel.className = 'skills-info-panel';
+    panel.innerHTML = `
+        <div class="skills-section-header">
+            <h3>技能来源</h3>
+            <p>安装和读取路径都在这里集中展示。</p>
+        </div>
+        <div class="skill-sources-grid">
+            ${(currentSkillSources.roots || []).map((root) => `
+                <div class="source-card">
+                    <div class="source-card-title">${escapeHtml(root.name)}</div>
+                    <div class="skill-meta-row"><code>${escapeHtml(root.path)}</code></div>
+                    <div class="skill-meta-row">${root.mutable ? '可写目录' : '只读目录'}</div>
+                    <div class="skill-meta-row">${escapeHtml(root.description || '')}</div>
+                </div>
+            `).join('')}
+            <div class="source-card">
+                <div class="source-card-title">${escapeHtml(currentSkillSources.remote?.name || '远程来源')}</div>
+                <div class="skill-meta-row">
+                    <a class="skill-link" href="${escapeHtml(currentSkillSources.remote?.site || '#')}" target="_blank" rel="noreferrer">
+                        ${escapeHtml(currentSkillSources.remote?.site || '未配置')}
+                    </a>
+                </div>
+            </div>
+        </div>
+    `;
+    lucide.createIcons();
+}
+
+async function fetchSkillSources() {
+    const response = await fetch('/api/skills/manage/sources');
+    if (!response.ok) {
+        throw new Error(`请求失败，状态码：${response.status}`);
+    }
+    currentSkillSources = await response.json();
+    renderSkillSourcesPanel();
+}
+
+async function toggleSkillSources() {
+    const panel = document.getElementById('skill-sources-panel');
+    if (!panel) return;
+
+    if (!panel.classList.contains('hidden')) {
+        panel.classList.add('hidden');
+        return;
+    }
+
+    if (!currentSkillSources) {
+        showSkillsFeedback('正在加载技能来源信息...', 'info');
+        try {
+            await fetchSkillSources();
+            clearSkillsFeedback();
+        } catch (e) {
+            console.error("加载技能来源失败", e);
+            showSkillsFeedback(`加载技能来源失败：${formatSkillError(e)}`, 'error');
+            return;
+        }
+    }
+
+    panel.classList.remove('hidden');
+}
+
+async function searchSkills() {
+    const input = document.getElementById('skill-search-input');
+    const query = input?.value?.trim() || '';
+    if (!query) {
+        hasSkillSearchRun = false;
+        currentSkillSearchQuery = '';
+        currentSkillSearchResults = [];
+        renderRemoteSkillResults([], null);
+        showSkillsFeedback('先输入关键词，再开始搜索技能。', 'info');
+        input?.focus();
+        return;
+    }
+
+    currentSkillSearchQuery = query;
+    hasSkillSearchRun = true;
+    showSkillsFeedback(`正在为你搜索“${query}”相关技能...`, 'info');
+
+    try {
+        const response = await fetch('/api/skills/manage/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, include_installed: true })
+        });
+        if (!response.ok) {
+            throw new Error(`请求失败，状态码：${response.status}`);
+        }
+
+        const data = await response.json();
+        currentSkillSearchResults = data.remote || [];
+        installedSkills = data.installed || installedSkills;
+        renderSkillsList();
+        renderRemoteSkillResults(currentSkillSearchResults, data.remote_error);
+        showSkillsFeedback(
+            currentSkillSearchResults.length
+                ? `搜索完成，找到了 ${currentSkillSearchResults.length} 个远程结果。`
+                : `搜索完成，但暂时没有找到和“${query}”匹配的远程结果。`,
+            currentSkillSearchResults.length ? 'success' : 'info'
+        );
+    } catch (e) {
+        console.error("搜索技能失败", e);
+        showSkillsFeedback(`搜索技能时出了点问题：${formatSkillError(e)}`, 'error');
+    }
+}
+
+function handleSkillSearchKeydown(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        searchSkills();
+    }
+}
+
+async function installSkill(skillRef) {
+    const normalizedRef = (skillRef || '').trim();
+    if (!normalizedRef) {
+        showSkillsFeedback('请输入要安装的技能标识或页面链接。', 'error');
+        return;
+    }
+
+    if (installingSkillRefs.has(normalizedRef)) {
+        return;
+    }
+
+    installingSkillRefs.add(normalizedRef);
+    renderRemoteSkillResults(currentSkillSearchResults, null);
+    showSkillsFeedback('正在为你安装技能，请稍等片刻...', 'info');
+    try {
+        const response = await fetch('/api/skills/manage/install', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ skill_ref: normalizedRef, force: false })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || `请求失败，状态码：${response.status}`);
+        }
+
+        installedSkills = data.skills || [];
+        const installedMatch = installedSkills.find((installedSkill) => {
+            const slug = (installedSkill.clawhub_slug || '').trim();
+            return slug === normalizedRef || installedSkill.name === normalizedRef || installedSkill.dir_name === normalizedRef;
+        });
+        currentSkillSearchResults = currentSkillSearchResults.map((skill) => {
+            const skillKey = (skill.slug || skill.page_url || '').trim();
+            if (skillKey !== normalizedRef) {
+                return skill;
+            }
+
+            return {
+                ...skill,
+                installed: true,
+                installed_skill_name: installedMatch?.name || skill.installed_skill_name || skill.name || skill.slug || '',
+            };
+        });
+        renderSkillsList();
+        renderRemoteSkillResults(currentSkillSearchResults, null);
+        showSkillsFeedback('安装完成，技能已经加入当前项目的已安装列表。', 'success');
+        const installInput = document.getElementById('skill-install-input');
+        if (installInput) installInput.value = '';
+    } catch (e) {
+        console.error("安装技能失败", e);
+        showSkillsFeedback(`安装没有成功：${formatSkillError(e)}`, 'error');
+    } finally {
+        installingSkillRefs.delete(normalizedRef);
+        renderRemoteSkillResults(currentSkillSearchResults, null);
+    }
+}
+
+async function installSkillFromInput() {
+    const input = document.getElementById('skill-install-input');
+    await installSkill(input?.value || '');
+}
+
+function handleSkillInstallKeydown(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        installSkillFromInput();
+    }
+}
+
+async function updateSkill(skillName) {
+    showSkillsFeedback(`正在更新“${skillName}”，请稍等...`, 'info');
+    try {
+        const response = await fetch('/api/skills/manage/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ skill_name: skillName, force: true })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || `请求失败，状态码：${response.status}`);
+        }
+
+        installedSkills = data.skills || [];
+        renderSkillsList();
+        showSkillsFeedback(`更新完成，“${skillName}”已经是最新状态。`, 'success');
+    } catch (e) {
+        console.error("更新技能失败", e);
+        showSkillsFeedback(`更新没有成功：${formatSkillError(e)}`, 'error');
+    }
+}
+
+async function removeSkill(skillName) {
+    if (!confirm(`确定要移除技能“${skillName}”吗？`)) {
+        return;
+    }
+
+    showSkillsFeedback(`正在移除“${skillName}”...`, 'info');
+    try {
+        const response = await fetch(`/api/skills/manage/${encodeURIComponent(skillName)}`, {
+            method: 'DELETE'
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || `请求失败，状态码：${response.status}`);
+        }
+
+        installedSkills = data.skills || [];
+        renderSkillsList();
+        showSkillsFeedback(`已经移除“${skillName}”。`, 'success');
+        if (currentSkillDetail?.name === skillName) {
+            closeSkillPreview();
+        }
+    } catch (e) {
+        console.error("移除技能失败", e);
+        showSkillsFeedback(`移除没有成功：${formatSkillError(e)}`, 'error');
+    }
 }
 
 async function openSkillPreview(skillName) {
@@ -216,15 +652,15 @@ async function openSkillPreview(skillName) {
     const content = document.getElementById('skill-preview-content');
 
     title.textContent = skillName;
-    meta.textContent = '加载中...';
-    content.innerHTML = '<div class="sidebar-loading">正在加载 SKILL.md 内容...</div>';
+    meta.textContent = '正在加载...';
+    content.innerHTML = '<div class="sidebar-loading">正在加载技能说明...</div>';
     modal.classList.remove('hidden');
     document.body.classList.add('modal-open');
 
     try {
         const response = await fetch(`/api/skills/${encodeURIComponent(skillName)}`);
         if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
+            throw new Error(`请求失败，状态码：${response.status}`);
         }
 
         currentSkillDetail = await response.json();
@@ -237,9 +673,9 @@ async function openSkillPreview(skillName) {
         meta.textContent = metaParts.join(' · ');
         content.innerHTML = marked.parse(currentSkillDetail.instructions || '_暂无内容_');
     } catch (e) {
-        console.error("加载 skill 详情失败", e);
+        console.error("加载技能详情失败", e);
         meta.textContent = '';
-        content.innerHTML = `<div class="sidebar-loading">加载失败: ${e.message}</div>`;
+        content.innerHTML = `<div class="sidebar-loading">加载失败：${formatSkillError(e)}</div>`;
     }
 
     lucide.createIcons();
@@ -265,27 +701,41 @@ async function loadSkills(forceRefresh = false) {
         return;
     }
 
-    listDiv.innerHTML = '<div class="sidebar-loading">加载 skills 中...</div>';
+    listDiv.innerHTML = '<div class="sidebar-loading">正在加载技能列表...</div>';
+    clearSkillsFeedback();
 
     try {
+        if (forceRefresh) {
+            const reloadResponse = await fetch('/api/skills/manage/reload', {
+                method: 'POST'
+            });
+            if (!reloadResponse.ok) {
+                throw new Error(`请求失败，状态码：${reloadResponse.status}`);
+            }
+        }
+
         const response = await fetch('/api/skills');
         if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
+            throw new Error(`请求失败，状态码：${response.status}`);
         }
 
         const data = await response.json();
         installedSkills = data.skills || [];
         renderSkillsList();
+        if (forceRefresh) {
+            showSkillsFeedback('技能列表已经刷新完成。', 'success');
+        }
     } catch (e) {
-        console.error("加载 skills 列表失败", e);
+        console.error("加载技能列表失败", e);
         listDiv.innerHTML = `
             <div class="sidebar-empty-state">
                 <i data-lucide="triangle-alert"></i>
-                <h3>Skills 加载失败</h3>
-                <p>${e.message}</p>
+                <h3>技能列表加载失败</h3>
+                <p>${formatSkillError(e)}</p>
             </div>
         `;
         lucide.createIcons();
+        showSkillsFeedback(`加载技能列表失败：${formatSkillError(e)}`, 'error');
     }
 }
 
