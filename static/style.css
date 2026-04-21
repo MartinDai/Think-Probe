@@ -460,6 +460,274 @@ body.sidebar-collapsed .nav-item {
     min-height: 0;
 }
 
+.mcp-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr);
+    gap: 18px;
+    align-items: start;
+}
+
+.mcp-form-card,
+.mcp-list-card {
+    padding: 22px;
+    border-radius: 22px;
+    border: 1px solid var(--border-color);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+}
+
+.mcp-form-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.mcp-form-header h3 {
+    margin: 0 0 6px;
+    font-size: 20px;
+}
+
+.mcp-form-header p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.mcp-stack {
+    display: grid;
+    gap: 14px;
+}
+
+.mcp-section-card {
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.025);
+    padding: 18px;
+}
+
+.mcp-section-card label {
+    display: block;
+    margin-bottom: 14px;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.mcp-form-card input,
+.mcp-row-input {
+    width: 100%;
+    box-sizing: border-box;
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
+    padding: 15px 18px;
+    outline: none;
+    transition: border-color 0.2s ease, background 0.2s ease;
+    font: inherit;
+}
+
+.mcp-form-card input:focus,
+.mcp-row-input:focus {
+    border-color: rgba(88, 166, 255, 0.4);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.mcp-segmented {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    border-radius: 18px;
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.mcp-segment {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-weight: 800;
+    font-size: 15px;
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.mcp-segment.active {
+    background: rgba(255, 255, 255, 0.18);
+    color: var(--text-primary);
+}
+
+.mcp-row-list {
+    display: grid;
+    gap: 12px;
+}
+
+.mcp-row-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+}
+
+.mcp-row-item-double {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.mcp-row-remove {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+}
+
+.mcp-add-row {
+    width: 100%;
+    margin-top: 14px;
+    border: none;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-muted);
+    font: inherit;
+    font-weight: 700;
+    padding: 14px 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.mcp-add-row:hover {
+    background: rgba(88, 166, 255, 0.1);
+    color: var(--text-primary);
+}
+
+.mcp-add-row i {
+    width: 16px;
+    height: 16px;
+}
+
+.mcp-form-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+    justify-content: flex-end;
+}
+
+.mcp-form-actions .refresh-button {
+    min-width: 108px;
+    justify-content: center;
+}
+
+.mcp-form-card .hidden {
+    display: none !important;
+}
+
+.mcp-list-card {
+    position: sticky;
+    top: 0;
+}
+
+.mcp-server-item {
+    margin-bottom: 12px;
+    padding: 16px;
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.mcp-server-item.enabled {
+    border-color: rgba(88, 166, 255, 0.22);
+}
+
+.mcp-server-item.disabled {
+    opacity: 0.82;
+}
+
+.mcp-tools-block {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-color);
+}
+
+.mcp-tools-header {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+}
+
+.mcp-tools-list {
+    display: grid;
+    gap: 10px;
+}
+
+.mcp-tool-item {
+    padding: 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.mcp-tool-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.mcp-toggle {
+    position: relative;
+    width: 42px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.mcp-toggle input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.mcp-toggle-slider {
+    width: 42px;
+    height: 24px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid var(--border-color);
+    position: relative;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.mcp-toggle-slider::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.2s ease;
+}
+
+.mcp-toggle input:checked + .mcp-toggle-slider {
+    background: rgba(88, 166, 255, 0.5);
+    border-color: rgba(88, 166, 255, 0.55);
+}
+
+.mcp-toggle input:checked + .mcp-toggle-slider::after {
+    transform: translateX(18px);
+}
+
 .skills-scroll-region {
     flex: 1;
     min-height: 0;
@@ -1584,8 +1852,21 @@ th {
         padding: 20px;
     }
 
+    .mcp-layout {
+        grid-template-columns: 1fr;
+    }
+
     .skills-search-row {
         grid-template-columns: 1fr;
+    }
+
+    .mcp-row-item,
+    .mcp-row-item-double {
+        grid-template-columns: 1fr;
+    }
+
+    .mcp-form-actions {
+        justify-content: stretch;
     }
 
     .page-header,

@@ -6,8 +6,9 @@ from langfuse.langchain import CallbackHandler
 
 from app.context.conversation_context import ConversationContext
 from app.core.llm import MODEL_NAME
-from app.core.graph import workflow
+from app.core.graph import build_workflow
 from app.service import context_compaction_service, conversation_service
+from app.service.mcp_service import mcp_service
 from app.utils.response_util import SSEBuilder
 
 
@@ -57,7 +58,8 @@ async def process_message(message: str, context: ConversationContext):
             )
         }
 
-        graph = workflow.compile()
+        runtime_tools = await mcp_service.load_enabled_tools()
+        graph = build_workflow(runtime_tools).compile()
         
         pending_tool_calls = {} # name -> list[id]
         running_tool_calls = {} # run_id -> id

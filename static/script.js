@@ -13,6 +13,9 @@ let currentSkillSources = null;
 let currentSkillSearchQuery = '';
 let hasSkillSearchRun = false;
 let installingSkillRefs = new Set();
+let mcpServers = [];
+let currentMcpEditingId = null;
+let currentMcpEnabled = true;
 
 function scrollToBottom(force = false) {
     const messagesDiv = document.getElementById('messages');
@@ -87,9 +90,12 @@ function switchSidebarView(view) {
 
     document.getElementById('chat-workspace').classList.toggle('active', view === 'chat');
     document.getElementById('skills-workspace').classList.toggle('active', view === 'skills');
+    document.getElementById('mcp-workspace').classList.toggle('active', view === 'mcp');
 
     if (view === 'skills') {
         loadSkills();
+    } else if (view === 'mcp') {
+        loadMcpServers();
     }
 
     lucide.createIcons();
@@ -736,6 +742,484 @@ async function loadSkills(forceRefresh = false) {
         `;
         lucide.createIcons();
         showSkillsFeedback(`加载技能列表失败：${formatSkillError(e)}`, 'error');
+    }
+}
+
+function formatMcpError(error) {
+    return formatSkillError(error);
+}
+
+function formatJsonValue(value, fallback = '') {
+    if (!value || (Array.isArray(value) && value.length === 0) || (typeof value === 'object' && Object.keys(value).length === 0)) {
+        return fallback;
+    }
+    return JSON.stringify(value, null, 2);
+}
+
+function createMcpSingleValueRow(value = '', placeholder = '', onRemove = '') {
+    return `
+        <div class="mcp-row-item">
+            <input class="mcp-row-input" type="text" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" />
+            <button class="icon-button mcp-row-remove" type="button" onclick="${onRemove}" title="删除">
+                <i data-lucide="trash-2"></i>
+            </button>
+        </div>
+    `;
+}
+
+function createMcpKeyValueRow(key = '', value = '', keyPlaceholder = '键', valuePlaceholder = '值', onRemove = '') {
+    return `
+        <div class="mcp-row-item mcp-row-item-double">
+            <input class="mcp-row-input" type="text" value="${escapeHtml(key)}" placeholder="${escapeHtml(keyPlaceholder)}" />
+            <input class="mcp-row-input" type="text" value="${escapeHtml(value)}" placeholder="${escapeHtml(valuePlaceholder)}" />
+            <button class="icon-button mcp-row-remove" type="button" onclick="${onRemove}" title="删除">
+                <i data-lucide="trash-2"></i>
+            </button>
+        </div>
+    `;
+}
+
+function appendMcpRow(listId, html) {
+    const list = document.getElementById(listId);
+    if (!list) return;
+    list.insertAdjacentHTML('beforeend', html);
+    lucide.createIcons();
+}
+
+function addMcpArgRow(value = '') {
+    appendMcpRow('mcp-args-list', createMcpSingleValueRow(value, '参数', 'removeMcpRow(this)'));
+}
+
+function addMcpEnvRow(key = '', value = '') {
+    appendMcpRow('mcp-env-list', createMcpKeyValueRow(key, value, '键', '值', 'removeMcpRow(this)'));
+}
+
+function addMcpEnvPassRow(value = '') {
+    appendMcpRow('mcp-env-pass-list', createMcpSingleValueRow(value, '环境变量名', 'removeMcpRow(this)'));
+}
+
+function addMcpHeaderRow(key = '', value = '') {
+    appendMcpRow('mcp-headers-list', createMcpKeyValueRow(key, value, '键', '值', 'removeMcpRow(this)'));
+}
+
+function addMcpHeaderEnvRow(key = '', value = '') {
+    appendMcpRow('mcp-header-env-list', createMcpKeyValueRow(key, value, '键', '环境变量名', 'removeMcpRow(this)'));
+}
+
+function addMcpSessionKwargRow(key = '', value = '') {
+    appendMcpRow('mcp-session-kwargs-list', createMcpKeyValueRow(key, value, '参数名', '参数值', 'removeMcpRow(this)'));
+}
+
+function removeMcpRow(button) {
+    button.closest('.mcp-row-item')?.remove();
+}
+
+function clearMcpRowList(listId) {
+    const list = document.getElementById(listId);
+    if (list) {
+        list.innerHTML = '';
+    }
+}
+
+function collectMcpSingleValueRows(listId) {
+    const list = document.getElementById(listId);
+    if (!list) return [];
+    return Array.from(list.querySelectorAll('.mcp-row-item'))
+        .map((row) => row.querySelector('.mcp-row-input')?.value.trim() || '')
+        .filter(Boolean);
+}
+
+function collectMcpKeyValueRows(listId) {
+    const list = document.getElementById(listId);
+    if (!list) return {};
+    const result = {};
+    Array.from(list.querySelectorAll('.mcp-row-item')).forEach((row) => {
+        const inputs = row.querySelectorAll('.mcp-row-input');
+        const key = inputs[0]?.value.trim() || '';
+        const value = inputs[1]?.value.trim() || '';
+        if (key) {
+            result[key] = value;
+        }
+    });
+    return result;
+}
+
+function seedMcpRowList(listId, values, addRow) {
+    clearMcpRowList(listId);
+    if (Array.isArray(values)) {
+        if (!values.length) {
+            addRow();
+            return;
+        }
+        values.forEach((value) => addRow(value));
+        return;
+    }
+
+    const entries = Object.entries(values || {});
+    if (!entries.length) {
+        addRow();
+        return;
+    }
+    entries.forEach(([key, value]) => addRow(key, value));
+}
+
+function setMcpTransport(transport) {
+    document.getElementById('mcp-transport').value = transport;
+    updateMcpTransportFields();
+}
+
+function resetMcpForm() {
+    currentMcpEditingId = null;
+    currentMcpEnabled = true;
+    document.getElementById('mcp-form-title').textContent = '新增 MCP 服务';
+    document.getElementById('mcp-name').value = '';
+    document.getElementById('mcp-description').value = '';
+    document.getElementById('mcp-bearer-env').value = '';
+    document.getElementById('mcp-command').value = '';
+    document.getElementById('mcp-url').value = '';
+    document.getElementById('mcp-cwd').value = '';
+    seedMcpRowList('mcp-args-list', [], addMcpArgRow);
+    seedMcpRowList('mcp-env-list', [], addMcpEnvRow);
+    seedMcpRowList('mcp-env-pass-list', [], addMcpEnvPassRow);
+    seedMcpRowList('mcp-headers-list', [], addMcpHeaderRow);
+    seedMcpRowList('mcp-header-env-list', [], addMcpHeaderEnvRow);
+    seedMcpRowList('mcp-session-kwargs-list', [], addMcpSessionKwargRow);
+    setMcpTransport('stdio');
+    updateMcpTransportFields();
+}
+
+function fillMcpForm(server) {
+    currentMcpEditingId = server.id;
+    currentMcpEnabled = Boolean(server.enabled);
+    document.getElementById('mcp-form-title').textContent = `编辑 MCP 服务 · ${server.name}`;
+    document.getElementById('mcp-name').value = server.name || '';
+    document.getElementById('mcp-description').value = server.description || '';
+    document.getElementById('mcp-command').value = server.command || '';
+    document.getElementById('mcp-url').value = server.url || '';
+    document.getElementById('mcp-cwd').value = server.cwd || '';
+    document.getElementById('mcp-bearer-env').value = '';
+    const env = { ...(server.env || {}) };
+    const envPassValues = Object.keys(env).filter((key) => env[key] === '');
+    envPassValues.forEach((key) => delete env[key]);
+
+    const headers = { ...(server.headers || {}) };
+    let bearerEnv = '';
+    const headerEnv = {};
+    Object.entries(headers).forEach(([key, value]) => {
+        const bearerMatch = /^Bearer \${([^}]+)}$/.exec(value || '');
+        if (key.toLowerCase() === 'authorization' && bearerMatch) {
+            bearerEnv = bearerMatch[1];
+            delete headers[key];
+            return;
+        }
+
+        const envMatch = /^\$\{([^}]+)\}$/.exec(value || '');
+        if (envMatch) {
+            headerEnv[key] = envMatch[1];
+            delete headers[key];
+        }
+    });
+
+    document.getElementById('mcp-bearer-env').value = bearerEnv;
+    seedMcpRowList('mcp-args-list', server.args || [], addMcpArgRow);
+    seedMcpRowList('mcp-env-list', env, addMcpEnvRow);
+    seedMcpRowList('mcp-env-pass-list', envPassValues, addMcpEnvPassRow);
+    seedMcpRowList('mcp-headers-list', headers, addMcpHeaderRow);
+    seedMcpRowList('mcp-header-env-list', headerEnv, addMcpHeaderEnvRow);
+    seedMcpRowList('mcp-session-kwargs-list', server.session_kwargs || {}, addMcpSessionKwargRow);
+    setMcpTransport(server.transport || 'stdio');
+    updateMcpTransportFields();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function updateMcpTransportFields() {
+    const transport = document.getElementById('mcp-transport').value;
+    document.querySelectorAll('.mcp-transport-field').forEach((element) => {
+        const shouldShow = element.dataset.transport === transport;
+        element.classList.toggle('hidden', !shouldShow);
+    });
+    document.getElementById('mcp-transport-stdio')?.classList.toggle('active', transport === 'stdio');
+    document.getElementById('mcp-transport-streamable')?.classList.toggle('active', transport === 'streamable_http');
+}
+
+function parseJsonField(rawValue, fallback, label) {
+    const trimmed = (rawValue || '').trim();
+    if (!trimmed) return fallback;
+    try {
+        return JSON.parse(trimmed);
+    } catch (error) {
+        throw new Error(`${label} 不是合法 JSON`);
+    }
+}
+
+function getMcpFormPayload() {
+    const transport = document.getElementById('mcp-transport').value;
+    const args = transport === 'stdio' ? collectMcpSingleValueRows('mcp-args-list') : [];
+    const env = transport === 'stdio' ? collectMcpKeyValueRows('mcp-env-list') : {};
+    const envPass = transport === 'stdio' ? collectMcpSingleValueRows('mcp-env-pass-list') : [];
+    envPass.forEach((key) => {
+        if (key && !(key in env)) {
+            env[key] = '';
+        }
+    });
+    const headers = transport === 'streamable_http' ? collectMcpKeyValueRows('mcp-headers-list') : {};
+    const headerEnv = transport === 'streamable_http' ? collectMcpKeyValueRows('mcp-header-env-list') : {};
+    Object.entries(headerEnv).forEach(([key, value]) => {
+        if (key && value) {
+            headers[key] = `\${${value}}`;
+        }
+    });
+    const bearerEnv = document.getElementById('mcp-bearer-env').value.trim();
+    if (transport === 'streamable_http' && bearerEnv) {
+        headers.Authorization = `Bearer \${${bearerEnv}}`;
+    }
+    const sessionKwargs = collectMcpKeyValueRows('mcp-session-kwargs-list');
+
+    const payload = {
+        name: document.getElementById('mcp-name').value.trim(),
+        description: document.getElementById('mcp-description').value.trim(),
+        transport,
+        command: transport === 'stdio' ? document.getElementById('mcp-command').value.trim() : '',
+        url: transport === 'streamable_http' ? document.getElementById('mcp-url').value.trim() : '',
+        cwd: transport === 'stdio' ? document.getElementById('mcp-cwd').value.trim() : '',
+        args,
+        env,
+        headers,
+        session_kwargs: sessionKwargs,
+        enabled: currentMcpEnabled,
+    };
+
+    if (transport === 'stdio' && !payload.command) {
+        throw new Error('stdio 模式下必须填写命令');
+    }
+    if (transport === 'streamable_http' && !payload.url) {
+        throw new Error('streamable-http 模式下必须填写 URL');
+    }
+
+    return payload;
+}
+
+function renderMcpServers() {
+    const container = document.getElementById('mcp-server-list');
+    if (!container) return;
+
+    if (!mcpServers.length) {
+        container.innerHTML = `
+            <div class="sidebar-empty-state">
+                <i data-lucide="plug-zap"></i>
+                <h3>暂无 MCP 服务</h3>
+            </div>
+        `;
+        lucide.createIcons();
+        return;
+    }
+
+    container.innerHTML = mcpServers.map((server) => {
+        const tools = server.tools || [];
+        const toolItems = tools.length
+            ? tools.map((tool) => `
+                <div class="mcp-tool-item">
+                    <div class="mcp-tool-name">${escapeHtml(tool.name || 'unknown')}</div>
+                    <div class="skill-meta-row">${escapeHtml(tool.description || '暂无描述')}</div>
+                </div>
+            `).join('')
+            : '<div class="sidebar-loading">暂无工具</div>';
+
+        return `
+            <div class="mcp-server-item ${server.enabled ? 'enabled' : 'disabled'}">
+                <div class="skill-item-header">
+                    <div class="skill-title-row">
+                        <i data-lucide="${server.enabled ? 'plug-zap' : 'plug'}"></i>
+                        <span class="skill-name">${escapeHtml(server.name)}</span>
+                        <span class="skill-version">${escapeHtml(server.transport)}</span>
+                    </div>
+                    <div class="skill-item-actions">
+                        <label class="mcp-toggle" title="${server.enabled ? '禁用' : '启用'}">
+                            <input type="checkbox" ${server.enabled ? 'checked' : ''} onchange="toggleMcpServerEnabled(${server.id}, this.checked)" />
+                            <span class="mcp-toggle-slider"></span>
+                        </label>
+                        <button class="icon-button skill-action-button" onclick="fillMcpFormById(${server.id})" title="编辑服务">
+                            <i data-lucide="pencil"></i>
+                        </button>
+                        <button class="icon-button skill-action-button" onclick="syncMcpServer(${server.id})" title="同步工具">
+                            <i data-lucide="refresh-cw"></i>
+                        </button>
+                        <button class="icon-button skill-action-button danger" onclick="deleteMcpServer(${server.id})" title="删除服务">
+                            <i data-lucide="trash-2"></i>
+                        </button>
+                    </div>
+                </div>
+                <p class="skill-description">${escapeHtml(server.description || '暂无描述')}</p>
+                ${server.command ? `<div class="skill-meta-row">命令: <code>${escapeHtml(server.command)}</code></div>` : ''}
+                ${server.url ? `<div class="skill-meta-row">URL: <code>${escapeHtml(server.url)}</code></div>` : ''}
+                ${server.cwd ? `<div class="skill-meta-row">工作目录: <code>${escapeHtml(server.cwd)}</code></div>` : ''}
+                <div class="skill-meta-row">工具数量: ${tools.length} · 最近同步: ${server.last_sync_at ? escapeHtml(new Date(server.last_sync_at).toLocaleString()) : '尚未同步'}</div>
+                ${server.last_error ? `<div class="skill-meta-row skill-warning">最近错误: ${escapeHtml(server.last_error)}</div>` : ''}
+                <div class="mcp-tools-block">
+                    <div class="mcp-tools-header">工具快照</div>
+                    <div class="mcp-tools-list">${toolItems}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    lucide.createIcons();
+}
+
+async function toggleMcpServerEnabled(serverId, enabled) {
+    const server = mcpServers.find((item) => item.id === serverId);
+    try {
+        const response = await fetch(`/api/mcp/servers/${serverId}/enabled`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || `请求失败，状态码：${response.status}`);
+        }
+        mcpServers = mcpServers.map((item) => item.id === serverId ? data.server : item);
+        renderMcpServers();
+        showSkillsFeedback(`${server?.name || 'MCP 服务'}已${enabled ? '启用' : '停用'}。`, 'success');
+    } catch (error) {
+        console.error('切换 MCP 服务状态失败', error);
+        await loadMcpServers();
+        showSkillsFeedback(`切换状态失败：${formatMcpError(error)}`, 'error');
+    }
+}
+
+function fillMcpFormById(serverId) {
+    const server = mcpServers.find((item) => item.id === serverId);
+    if (!server) {
+        showSkillsFeedback('没有找到要编辑的 MCP 服务。', 'error');
+        return;
+    }
+    fillMcpForm(server);
+}
+
+async function loadMcpServers(showToast = false) {
+    const container = document.getElementById('mcp-server-list');
+    if (!container) return;
+    container.innerHTML = '<div class="sidebar-loading">正在加载 MCP 服务...</div>';
+
+    try {
+        const response = await fetch('/api/mcp/servers');
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || `请求失败，状态码：${response.status}`);
+        }
+        mcpServers = data.servers || [];
+        renderMcpServers();
+        if (showToast) {
+            showSkillsFeedback('MCP 服务列表已刷新。', 'success');
+        }
+    } catch (error) {
+        console.error('加载 MCP 服务失败', error);
+        container.innerHTML = `
+            <div class="sidebar-empty-state">
+                <i data-lucide="triangle-alert"></i>
+                <h3>MCP 列表加载失败</h3>
+                <p>${escapeHtml(formatMcpError(error))}</p>
+            </div>
+        `;
+        lucide.createIcons();
+        showSkillsFeedback(`加载 MCP 服务失败：${formatMcpError(error)}`, 'error');
+    }
+}
+
+async function saveMcpServer() {
+    let payload;
+    try {
+        payload = getMcpFormPayload();
+    } catch (error) {
+        showSkillsFeedback(formatMcpError(error), 'error');
+        return;
+    }
+
+    const isEditing = currentMcpEditingId !== null;
+    showSkillsFeedback(isEditing ? '正在更新 MCP 服务...' : '正在创建 MCP 服务...', 'info');
+
+    try {
+        const response = await fetch(isEditing ? `/api/mcp/servers/${currentMcpEditingId}` : '/api/mcp/servers', {
+            method: isEditing ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || `请求失败，状态码：${response.status}`);
+        }
+        resetMcpForm();
+        await loadMcpServers();
+        showSkillsFeedback(isEditing ? 'MCP 服务已更新。' : 'MCP 服务已创建。', 'success');
+    } catch (error) {
+        console.error('保存 MCP 服务失败', error);
+        showSkillsFeedback(`保存失败：${formatMcpError(error)}`, 'error');
+    }
+}
+
+async function deleteMcpServer(serverId) {
+    const server = mcpServers.find((item) => item.id === serverId);
+    if (!server) return;
+    if (!confirm(`确定要删除 MCP 服务“${server.name}”吗？`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/mcp/servers/${serverId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || `请求失败，状态码：${response.status}`);
+        }
+        if (currentMcpEditingId === serverId) {
+            resetMcpForm();
+        }
+        await loadMcpServers();
+        showSkillsFeedback(`已删除 MCP 服务“${server.name}”。`, 'success');
+    } catch (error) {
+        console.error('删除 MCP 服务失败', error);
+        showSkillsFeedback(`删除失败：${formatMcpError(error)}`, 'error');
+    }
+}
+
+async function syncMcpServer(serverId) {
+    const server = mcpServers.find((item) => item.id === serverId);
+    showSkillsFeedback(`正在同步 ${server?.name || 'MCP 服务'} 的工具快照...`, 'info');
+    try {
+        const response = await fetch(`/api/mcp/servers/${serverId}/sync`, { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || `请求失败，状态码：${response.status}`);
+        }
+        await loadMcpServers();
+        if (data.server?.last_error) {
+            showSkillsFeedback(`同步完成，但有错误：${data.server.last_error}`, 'error');
+        } else {
+            showSkillsFeedback(`已同步 ${data.server?.name || 'MCP 服务'} 的工具快照。`, 'success');
+        }
+    } catch (error) {
+        console.error('同步 MCP 服务失败', error);
+        showSkillsFeedback(`同步失败：${formatMcpError(error)}`, 'error');
+    }
+}
+
+async function syncEnabledMcpServers() {
+    showSkillsFeedback('正在同步所有启用中的 MCP 服务...', 'info');
+    try {
+        const response = await fetch('/api/mcp/servers/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sync_enabled_only: true }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || `请求失败，状态码：${response.status}`);
+        }
+        await loadMcpServers();
+        const summary = data.summary || {};
+        showSkillsFeedback(`同步完成：成功 ${summary.success || 0} 个，失败 ${summary.failed || 0} 个。`, summary.failed ? 'error' : 'success');
+    } catch (error) {
+        console.error('批量同步 MCP 服务失败', error);
+        showSkillsFeedback(`批量同步失败：${formatMcpError(error)}`, 'error');
     }
 }
 
@@ -1420,6 +1904,8 @@ lucide.createIcons();
 async function initApp() {
     await updateConversationList();
     await loadSkills();
+    resetMcpForm();
+    updateMcpTransportFields();
     updateNewSessionUI(true);
     switchSidebarView('chat');
 

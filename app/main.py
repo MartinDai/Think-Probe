@@ -29,7 +29,9 @@ async def get_chat_page(request: Request):
 
 # 注册路由
 from app.api.conversations import router as conversations_router
+from app.api.mcp import router as mcp_router
 from app.api.skills import router as skills_router
 
 app.include_router(conversations_router)
+app.include_router(mcp_router)
 app.include_router(skills_router)

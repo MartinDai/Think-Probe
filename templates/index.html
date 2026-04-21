@@ -29,6 +29,10 @@
                     <i data-lucide="blocks"></i>
                     <span>技能管理</span>
                 </button>
+                <button class="nav-item" data-view="mcp" onclick="switchSidebarView('mcp')" title="MCP 管理">
+                    <i data-lucide="plug-zap"></i>
+                    <span>MCP 管理</span>
+                </button>
             </div>
         </aside>
         <div class="workspace">
@@ -121,6 +125,151 @@
                         </div>
 
                         <div id="skills-list" class="skills-page-list"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="mcp-workspace" class="feature-workspace">
+                <div class="skills-page">
+                    <div class="page-header">
+                        <div>
+                            <h1>MCP 管理</h1>
+                        </div>
+                        <div class="skills-header-actions">
+                            <button class="icon-button refresh-button" onclick="syncEnabledMcpServers()" title="同步启用服务">
+                                <i data-lucide="refresh-ccw"></i>
+                                <span>同步</span>
+                            </button>
+                            <button class="icon-button refresh-button" onclick="loadMcpServers(true)" title="刷新 MCP 列表">
+                                <i data-lucide="refresh-cw"></i>
+                                <span>刷新</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="skills-scroll-region">
+                        <div class="mcp-layout">
+                            <div class="mcp-form-card">
+                                <div class="mcp-form-header">
+                                    <div>
+                                        <h3 id="mcp-form-title">新增 MCP 服务</h3>
+                                    </div>
+                                    <button class="icon-button subtle-action-button" onclick="resetMcpForm()" title="重置表单">
+                                        <i data-lucide="rotate-ccw"></i>
+                                    </button>
+                                </div>
+
+                                <div class="mcp-stack">
+                                    <div class="mcp-section-card">
+                                        <label for="mcp-name">服务名称</label>
+                                        <input id="mcp-name" type="text" placeholder="MCP server name" />
+                                    </div>
+
+                                    <div class="mcp-segmented" role="tablist" aria-label="MCP 传输方式">
+                                        <button id="mcp-transport-stdio" class="mcp-segment active" type="button" onclick="setMcpTransport('stdio')">STDIO</button>
+                                        <button id="mcp-transport-streamable" class="mcp-segment" type="button" onclick="setMcpTransport('streamable_http')">流式 HTTP</button>
+                                        <input id="mcp-transport" type="hidden" value="stdio" />
+                                    </div>
+
+                                    <div class="mcp-section-card">
+                                        <label for="mcp-description">说明</label>
+                                        <input id="mcp-description" type="text" placeholder="方便后台识别这个服务的用途" />
+                                    </div>
+
+                                    <div id="mcp-command-group" class="mcp-section-card mcp-transport-field" data-transport="stdio">
+                                        <label for="mcp-command">命令</label>
+                                        <input id="mcp-command" type="text" placeholder="openai-dev-mcp serve-sqlite" />
+                                    </div>
+
+                                    <div id="mcp-url-group" class="mcp-section-card mcp-transport-field hidden" data-transport="streamable_http">
+                                        <label for="mcp-url">URL</label>
+                                        <input id="mcp-url" type="text" placeholder="https://mcp.example.com/mcp" />
+                                    </div>
+
+                                    <div id="mcp-bearer-env-group" class="mcp-section-card mcp-transport-field hidden" data-transport="streamable_http">
+                                        <label for="mcp-bearer-env">Bearer 令牌环境变量</label>
+                                        <input id="mcp-bearer-env" type="text" placeholder="MCP_BEARER_TOKEN" />
+                                    </div>
+
+                                    <div id="mcp-args-group" class="mcp-section-card mcp-transport-field" data-transport="stdio">
+                                        <label>参数</label>
+                                        <div id="mcp-args-list" class="mcp-row-list"></div>
+                                        <button class="mcp-add-row" type="button" onclick="addMcpArgRow()">
+                                            <i data-lucide="plus"></i>
+                                            <span>添加参数</span>
+                                        </button>
+                                    </div>
+
+                                    <div id="mcp-env-group" class="mcp-section-card mcp-transport-field" data-transport="stdio">
+                                        <label>环境变量</label>
+                                        <div id="mcp-env-list" class="mcp-row-list"></div>
+                                        <button class="mcp-add-row" type="button" onclick="addMcpEnvRow()">
+                                            <i data-lucide="plus"></i>
+                                            <span>添加环境变量</span>
+                                        </button>
+                                    </div>
+
+                                    <div id="mcp-env-pass-group" class="mcp-section-card mcp-transport-field" data-transport="stdio">
+                                        <label>环境变量传递</label>
+                                        <div id="mcp-env-pass-list" class="mcp-row-list"></div>
+                                        <button class="mcp-add-row" type="button" onclick="addMcpEnvPassRow()">
+                                            <i data-lucide="plus"></i>
+                                            <span>添加变量</span>
+                                        </button>
+                                    </div>
+
+                                    <div id="mcp-cwd-group" class="mcp-section-card mcp-transport-field" data-transport="stdio">
+                                        <label for="mcp-cwd">工作目录</label>
+                                        <input id="mcp-cwd" type="text" placeholder="~/code" />
+                                    </div>
+
+                                    <div id="mcp-headers-group" class="mcp-section-card mcp-transport-field hidden" data-transport="streamable_http">
+                                        <label>标头</label>
+                                        <div id="mcp-headers-list" class="mcp-row-list"></div>
+                                        <button class="mcp-add-row" type="button" onclick="addMcpHeaderRow()">
+                                            <i data-lucide="plus"></i>
+                                            <span>添加标头</span>
+                                        </button>
+                                    </div>
+
+                                    <div id="mcp-header-env-group" class="mcp-section-card mcp-transport-field hidden" data-transport="streamable_http">
+                                        <label>来自环境变量的标头</label>
+                                        <div id="mcp-header-env-list" class="mcp-row-list"></div>
+                                        <button class="mcp-add-row" type="button" onclick="addMcpHeaderEnvRow()">
+                                            <i data-lucide="plus"></i>
+                                            <span>添加变量</span>
+                                        </button>
+                                    </div>
+
+                                    <div id="mcp-session-kwargs-group" class="mcp-section-card">
+                                        <label>会话参数</label>
+                                        <div id="mcp-session-kwargs-list" class="mcp-row-list"></div>
+                                        <button class="mcp-add-row" type="button" onclick="addMcpSessionKwargRow()">
+                                            <i data-lucide="plus"></i>
+                                            <span>添加参数</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="mcp-form-actions">
+                                    <button class="icon-button refresh-button" type="button" onclick="saveMcpServer()">
+                                        <span>保存</span>
+                                    </button>
+                                    <button class="icon-button refresh-button" type="button" onclick="resetMcpForm()">
+                                        <span>清空</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="mcp-list-card">
+                                <div class="skills-section-header">
+                                    <div class="section-heading-group">
+                                        <h3>已配置服务</h3>
+                                    </div>
+                                </div>
+                                <div id="mcp-server-list"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
